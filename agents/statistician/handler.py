@@ -7,7 +7,7 @@ import contextlib
 import numpy as np
 from scipy.stats import norm
 
-from agents.common import DESIGNS, MENU, PILOT_SEEDS, PLACEBO, POSITIVE_CONTROL, evaluate_arm
+from agents.common import DESIGNS, MENU, PILOT_SEEDS, PLACEBO, POSITIVE_CONTROL, describe_config, evaluate_arm
 from judges import forecast as fh
 from science import kernel as sk
 from state.rig import GuardError
@@ -29,7 +29,7 @@ def promote_champion(rig, ctx):
     best = max(wins, key=lambda e: e["point"])
     before = ctx["champion_desc"]
     ctx["champion"] = dict(ctx["champion"], **MENU[best["key"]][1])
-    ctx["champion_desc"] = before + " + " + MENU[best["key"]][0].lower()
+    ctx["champion_desc"] = describe_config(ctx["champion"])
     ctx["champion_history"].append(
         dict(
             campaign=ctx["campaign"], promoted=best["key"], evidence=best["slice"], from_=before, to=ctx["champion_desc"]

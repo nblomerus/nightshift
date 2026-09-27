@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from agents.common import MENU, ask_json, evaluate_arm, persona
+from agents.common import MENU, ask_json, evaluate_arm, persona, prereg_statement
 
 
 # ---------------------------------------------------------------------------- experimenter
@@ -52,9 +52,19 @@ def experimenter_check(rig, seat, task, ctx):
         "— the config supplies it. "
         'Reply JSON: {"implementable_exactly": true/false, "mismatch": "...", "message": "to the methodologist"}',
     )
+    # deterministic: the statement must be the one generated from the CURRENT champion config and standards
+    expected = prereg_statement(ctx["champion"], pre["treatment_key"], rig.spec["decision_standards"], pre["alpha"])
+    out["statement_from_config"] = pre["statement"] == expected
+    if not out["statement_from_config"]:
+        out["mismatch"] = "statement is not the one generated from the current champion config; regenerate it"
     rig.proof(sid, f"implementation_check_r{pre['revision']}.json", out)
-    if out.get("implementable_exactly") is True:
-        rig.advance(seat, sid, "implementation_checked", checks={"implementable_exactly": True})
+    if out.get("implementable_exactly") is True and out["statement_from_config"]:
+        rig.advance(
+            seat,
+            sid,
+            "implementation_checked",
+            checks={"implementable_exactly": True, "statement_from_config": True},
+        )
         rig.queue(seat, rig.seat_for("statistician"), "power_controls", sid, {})
     else:
         rig.send(seat, rig.seat_for("methodologist"), out.get("message") or out.get("mismatch", ""), sid)

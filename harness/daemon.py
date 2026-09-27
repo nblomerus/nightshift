@@ -31,7 +31,7 @@ def make_ctx(llm):
         primary_seed={},
         replication_seed={},
         champion=dict(S.fh.BASELINE),
-        champion_desc="pooled ridge on demand lags 1-4 and 4/13-week rolling means",
+        champion_desc=S.describe_config(S.fh.BASELINE),
         evidence=[],
         lessons=[],
         variance_book={},
