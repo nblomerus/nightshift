@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import json
 
-from agents.common import MENU, ask_json, audit_locked, evaluate_arm, persona, prereg_statement
+from agents.common import (
+    MENU,
+    ask_json,
+    audit_locked,
+    evaluate_arm,
+    persona,
+    prereg_statement,
+    require_judge,
+)
 
 
 # ---------------------------------------------------------------------------- experimenter
@@ -12,6 +20,7 @@ def experimenter_run(rig, seat, task, ctx):
     sid = task["slice"]
     pre = ctx["locked"][sid]
     audit_locked(rig, sid, pre, seat, "run")
+    judge = require_judge(rig, seat, sid, pre, "run", {"digest_matches": pre.verify(), "judge_result": False})
     for m in rig.inbox(seat):
         rig.note(seat, f"answer from {m['frm']}: {m['body'][:200]}")
     out = dict(run_note="ran treatment and comparator under the frozen judge as locked")
@@ -23,6 +32,7 @@ def experimenter_run(rig, seat, task, ctx):
         "run_result.json",
         dict(
             digest=pre.digest,
+            judge_digest=judge,
             seed=seed,
             design=d,
             run_note=out.get("run_note"),
@@ -30,7 +40,12 @@ def experimenter_run(rig, seat, task, ctx):
             err_c=c["abs_err"].tolist(),
         ),
     )
-    rig.advance(seat, sid, "run", checks={"digest_matches": pre.verify(), "judge_result": True})
+    rig.advance(
+        seat,
+        sid,
+        "run",
+        checks={"digest_matches": pre.verify(), "judge_result": True, "judge_unchanged": judge == pre.judge_digest},
+    )
     rig.queue(seat, rig.seat_for("statistician"), "analyse", sid, {})
     return out
 

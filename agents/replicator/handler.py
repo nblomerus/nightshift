@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from agents.common import MENU, ask_json, audit_locked, evaluate_arm, persona
+from agents.common import MENU, ask_json, audit_locked, evaluate_arm, persona, require_judge
 from science import kernel as sk
 
 
@@ -13,6 +13,7 @@ def replicator_replicate(rig, seat, task, ctx):
     sid = task["slice"]
     pre = ctx["locked"][sid]
     audit_locked(rig, sid, pre, seat, "replication")
+    judge = require_judge(rig, seat, sid, pre, "not_replicated", {"same_digest": pre.verify()})
     menu = "\n".join(f"- {k}: {v[0]}" for k, v in MENU.items())
     out = ask_json(
         ctx["llm"],
@@ -37,7 +38,12 @@ def replicator_replicate(rig, seat, task, ctx):
         est = sk.paired_effect(t["abs_err"], c["abs_err"], pre.alpha, pre.n_boot, rng)
         dec = sk.decide(est, pre.sesoi)
     rep = dict(
-        reimplemented_as=key, same_treatment=same_treatment, seed=seed, decision=dec, reasoning=out.get("reasoning")
+        reimplemented_as=key,
+        same_treatment=same_treatment,
+        seed=seed,
+        decision=dec,
+        reasoning=out.get("reasoning"),
+        judge_digest=judge,
     )
     rig.proof(sid, "replication.json", rep)
     rig.proof(sid, "replications.json", attempts + [dict(rep, attempt=len(attempts) + 1, campaign=ctx["campaign"])])
@@ -50,6 +56,7 @@ def replicator_replicate(rig, seat, task, ctx):
             "independent_seat": seat != rig.seat_for("experimenter"),
             "same_digest": pre.verify(),
             "fresh_data": seed not in used,
+            "judge_unchanged": judge == pre.judge_digest,
         },
         note=f"{dec}; reimplementation {'matched' if same_treatment else 'DIFFERED'}",
     )

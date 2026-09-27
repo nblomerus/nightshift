@@ -37,6 +37,10 @@ Key guards: `p_decisive>=0.8` and `controls_admissible` (statistician), `prereg_
 `independent_seat` + `same_digest` + `fresh_data` (replication), `decision_not_supported` (writing without replication),
 `grade_b_supported` + `tested_on_current_champion` + `under_replication_cap` (another replication attempt).
 
+Judge integrity: the SHA-256 of the judge source (`agents/common.py::JUDGE_PATH`) is locked into the prereg as
+`judge_digest` and stamped on `run_result`, `decision` and `replication`. `judge_unchanged` guards `locked → run`,
+`run → analysed` and both replication edges, and is checked before the judge runs.
+
 Deviations: at run, analysis, replication and write-up, `audit_locked` compares the prereg in use with the body
 written at lock (`proof/prereg_locked.json`). Every changed field goes into the `prereg_deviations` table
 (and BOARD.md) once, and any deviation grades the slice C. A change that kept the old digest also fails

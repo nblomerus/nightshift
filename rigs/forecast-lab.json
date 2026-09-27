@@ -125,7 +125,8 @@
     ],
     "requires": [
      "digest_matches",
-     "judge_result"
+     "judge_result",
+     "judge_unchanged"
     ]
    },
    {
@@ -135,7 +136,8 @@
      "statistician"
     ],
     "requires": [
-     "kernel_decision"
+     "kernel_decision",
+     "judge_unchanged"
     ]
    },
    {
@@ -147,7 +149,8 @@
     "requires": [
      "independent_seat",
      "same_digest",
-     "fresh_data"
+     "fresh_data",
+     "judge_unchanged"
     ]
    },
    {
@@ -159,7 +162,8 @@
     "requires": [
      "independent_seat",
      "same_digest",
-     "fresh_data"
+     "fresh_data",
+     "judge_unchanged"
     ]
    },
    {
@@ -183,7 +187,8 @@
     "requires": [
      "independent_seat",
      "same_digest",
-     "fresh_data"
+     "fresh_data",
+     "judge_unchanged"
     ]
    },
    {
@@ -195,7 +200,8 @@
     "requires": [
      "independent_seat",
      "same_digest",
-     "fresh_data"
+     "fresh_data",
+     "judge_unchanged"
     ]
    },
    {

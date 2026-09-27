@@ -76,3 +76,9 @@ def test_evidence_grades():
     assert sk.evidence_grade("supported", False, 0, True).startswith("B")
     assert sk.evidence_grade("supported", True, 1, True).startswith("C")
     assert sk.evidence_grade("supported", True, 0, False).startswith("D")
+
+
+def test_judge_digest_is_part_of_the_locked_body():
+    a, b = _pre(judge_digest="aaa").lock(), _pre(judge_digest="bbb").lock()
+    assert a.verify() and b.verify() and a.digest != b.digest
+    assert not dc.replace(a, judge_digest="bbb").verify()

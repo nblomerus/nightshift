@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 
@@ -97,6 +98,22 @@ def evaluate_arm(genome, design, seed, cache):
     d = DESIGNS[design]
     panel = cache.setdefault(("panel", seed, design), fh.make_panel(seed, T=d["T"]))
     return fh.evaluate(panel, genome, d["origins"], cache.setdefault(("ev", seed, design), {}))
+
+
+JUDGE_PATH = fh.__file__  # the frozen judge; its digest is locked into every prereg
+
+
+def judge_digest():
+    with open(JUDGE_PATH, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def require_judge(rig, seat, sid, pre, to_stage, checks):
+    """Before the judge runs: if its source changed since lock, refuse `to_stage` through the rig (logged)."""
+    now = judge_digest()
+    if now != pre.judge_digest:
+        rig.advance(seat, sid, to_stage, checks=dict(checks, judge_unchanged=False))
+    return now
 
 
 def slice_grade(rig, sid):
