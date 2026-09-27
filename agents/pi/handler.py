@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agents.common import MENU, ask_json, persona
+from agents.common import MENU, ask_json, persona, slice_seed
 
 
 # ---------------------------------------------------------------------------- PI
@@ -63,8 +63,8 @@ def pi_plan(rig, seat, task, ctx):
             MENU[key][0],
             f"# {MENU[key][0]}\n\nChampion: {ctx['champion_desc']}\n\nRationale (PI): {p['rationale']}\n",
         )
-        ctx["primary_seed"][sid] = 8000 + 100 * ctx["campaign"] + i
-        ctx["replication_seed"][sid] = 8500 + 100 * ctx["campaign"] + i
+        ctx["primary_seed"][sid] = slice_seed("primary", ctx["campaign"], i)
+        ctx["replication_seed"][sid] = slice_seed("replication", ctx["campaign"], i)
         rig.advance(seat, sid, "hypothesis", note=p["rationale"][:120])
         rig.queue(seat, rig.seat_for("methodologist"), "draft_prereg", sid, dict(key=key, rationale=p["rationale"]))
     return dict(picks=[p["key"] for p in picks], lesson=out.get("lesson"))

@@ -48,7 +48,15 @@ EXPLORATION_SEEDS = (6001, 6002)  # exploratory screens only; never used for con
 PILOT_SEEDS = (7001, 7002, 7003)  # power/controls only; never used for confirmatory tests
 
 
-EXTRA_REPLICATION_SEED0 = 90_000  # + 100 * campaign + slot: extra replications of grade-B results only
+SEED_PURPOSES = {"primary": 1_000_000, "replication": 2_000_000, "extra_replication": 3_000_000}
+
+
+def slice_seed(purpose, campaign, slot):
+    """The panel seed for one slice's confirmatory data. Each purpose owns a block of a million seeds, far
+    from the pilot and exploration seeds, so no seed serves two purposes or two slices (AGENTS.md invariant 9)."""
+    if purpose not in SEED_PURPOSES or not 0 <= campaign < 1000 or not 0 <= slot < 1000:
+        raise ValueError(f"no seed for {purpose!r}, campaign {campaign}, slot {slot}")
+    return SEED_PURPOSES[purpose] + 1000 * campaign + slot
 
 
 REPLICATION_CAP = 2  # replication attempts per locked prereg, the first included
