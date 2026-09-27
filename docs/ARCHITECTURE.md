@@ -37,6 +37,11 @@ Key guards: `p_decisive>=0.8` and `controls_admissible` (statistician), `prereg_
 `independent_seat` + `same_digest` + `fresh_data` (replication), `decision_not_supported` (writing without replication),
 `grade_b_supported` + `tested_on_current_champion` + `under_replication_cap` (another replication attempt).
 
+Deviations: at run, analysis, replication and write-up, `audit_locked` compares the prereg in use with the body
+written at lock (`proof/prereg_locked.json`). Every changed field goes into the `prereg_deviations` table
+(and BOARD.md) once, and any deviation grades the slice C. A change that kept the old digest also fails
+`digest_matches`, so the run is refused; a change that was re-locked passes the digest check but not the audit.
+
 ## Decisions (science/kernel.py)
 Relative WAPE reduction, treatment vs comparator, paired over units × origins, **pigeonhole bootstrap** (resample
 series and origins). `supported`: CI lower bound > 0 and estimate ≥ SESOI · `harmful`: CI upper < 0 ·

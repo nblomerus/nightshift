@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 
-from agents.common import MENU, ask_json, evaluate_arm, persona, prereg_statement
+from agents.common import MENU, ask_json, audit_locked, evaluate_arm, persona, prereg_statement
 
 
 # ---------------------------------------------------------------------------- experimenter
 def experimenter_run(rig, seat, task, ctx):
     sid = task["slice"]
     pre = ctx["locked"][sid]
+    audit_locked(rig, sid, pre, seat, "run")
     for m in rig.inbox(seat):
         rig.note(seat, f"answer from {m['frm']}: {m['body'][:200]}")
     out = dict(run_note="ran treatment and comparator under the frozen judge as locked")

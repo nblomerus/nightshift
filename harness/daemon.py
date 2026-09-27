@@ -112,7 +112,16 @@ def board(rig):
     lines += ["", "## Messages (send: questions and answers, no state change)", ""]
     for r in rig.db.execute("SELECT id, frm, to_seat, slice, body FROM messages ORDER BY id"):
         lines.append(f"**#{r[0]} {r[1].split('@')[0]} → {r[2].split('@')[0]}** ({r[3]}): {r[4]}\n")
-    lines += ["## Workflow guard log", "| Slice | Seat | From → To | Allowed | Note |", "|---|---|---|---|---|"]
+    lines += ["## Prereg deviations (changes after lock; each downgrades the grade)", ""]
+    devs = rig.db.execute(
+        "SELECT slice, seat, field, before, after, reason FROM prereg_deviations ORDER BY ts"
+    ).fetchall()
+    lines += (
+        ["| Slice | Found by | Field | Locked | Found | Reason |", "|---|---|---|---|---|---|"] if devs else ["(none)"]
+    )
+    for r in devs:
+        lines.append(f"| {r[0]} | {r[1].split('@')[0]} | {r[2]} | {r[3][:60]} | {r[4][:60]} | {r[5]} |")
+    lines += ["", "## Workflow guard log", "| Slice | Seat | From → To | Allowed | Note |", "|---|---|---|---|---|"]
     for r in rig.db.execute("SELECT slice, seat, frm, to_stage, ok, note FROM slice_events"):
         lines.append(
             f"| {r[0]} | {r[1].split('@')[0]} | {r[2]} → {r[3]} | "

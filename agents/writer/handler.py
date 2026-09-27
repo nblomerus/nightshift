@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agents.common import MENU, ask_json, persona, slice_grade
+from agents.common import MENU, ask_json, audit_locked, persona, slice_grade
 
 
 # ---------------------------------------------------------------------------- writer
@@ -13,6 +13,7 @@ def writer_write(rig, seat, task, ctx):
     sid = task["slice"]
     pre, dec = ctx["locked"][sid], rig.read_proof(sid, "decision.json")
     repl = rig.read_proof(sid, "replication.json")
+    audit_locked(rig, sid, pre, seat, "write-up")
     grade = slice_grade(rig, sid)
     out = ask_json(
         ctx["llm"],

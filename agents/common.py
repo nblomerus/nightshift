@@ -103,7 +103,19 @@ def slice_grade(rig, sid):
     """The evidence grade from the slice's proof files: the decision and the LATEST replication attempt."""
     dec, repl = rig.read_proof(sid, "decision.json"), rig.read_proof(sid, "replication.json") or {}
     replicated = repl.get("decision") == "supported" and bool(repl.get("same_treatment"))
-    return sk.evidence_grade(dec["decision"], replicated, deviations=0, controls_ok=True)
+    return sk.evidence_grade(dec["decision"], replicated, deviations=len(rig.deviations(sid)), controls_ok=True)
+
+
+def audit_locked(rig, sid, pre, seat, stage):
+    """Compare the prereg in use with the body written at lock (proof/prereg_locked.json) and record every
+    changed field once. Catches a change that was re-locked, which `Preregistration.verify` cannot see."""
+    locked = rig.read_proof(sid, "prereg_locked.json")["body"]
+    now = json.loads(json.dumps(pre._body(), default=str))
+    seen = {(d["field"], json.dumps(d["after"], sort_keys=True)) for d in rig.deviations(sid)}
+    for field in sorted(set(locked) | set(now)):
+        before, after = locked.get(field), now.get(field)
+        if before != after and (field, json.dumps(after, sort_keys=True)) not in seen:
+            rig.record_deviation(sid, seat, field, before, after, f"found at {stage}; not in the locked prereg")
 
 
 # ---------------------------------------------------------------------------- prereg text from config
