@@ -8,7 +8,12 @@ from agents.explorer.handler import explorer_screen  # noqa: F401
 from agents.methodologist.handler import methodologist_answer, methodologist_draft
 from agents.pi.handler import pi_plan, pi_read
 from agents.replicator.handler import replicator_replicate
-from agents.statistician.handler import promote_champion, statistician_analyse, statistician_power_controls  # noqa: F401
+from agents.statistician.handler import (  # noqa: F401
+    promote_champion,
+    schedule_replications,
+    statistician_analyse,
+    statistician_power_controls,
+)
 from agents.writer.handler import writer_write
 
 HANDLERS = {

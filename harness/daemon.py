@@ -40,6 +40,7 @@ def make_ctx(llm):
         campaign=0,
         n_campaigns=0,
         campaigns=[],
+        replicating=[],
     )
 
 
@@ -138,6 +139,7 @@ def run(llm, root="runs/latest", max_ticks=40, n_campaigns=3, rigspec: str | Non
             rig.seat_for("pi"),
             "(explorer) exploratory screen vs champion: " + ", ".join(f"{a} {b:+.2%}" for a, b in screen.items()),
         )
+        ctx["replicating"] = S.schedule_replications(rig, ctx)  # before new hypotheses
         rig.queue("human" if k == 1 else rig.seat_for("pi"), rig.seat_for("pi"), "plan", None, {"campaign": k})
         n_before = len(ctx["evidence"])
         for _ in range(max_ticks):

@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agents.common import MENU, ask_json, persona
-from science import kernel as sk
+from agents.common import MENU, ask_json, persona, slice_grade
 
 
 # ---------------------------------------------------------------------------- writer
@@ -14,12 +13,7 @@ def writer_write(rig, seat, task, ctx):
     sid = task["slice"]
     pre, dec = ctx["locked"][sid], rig.read_proof(sid, "decision.json")
     repl = rig.read_proof(sid, "replication.json")
-    grade = sk.evidence_grade(
-        dec["decision"],
-        (repl or {}).get("decision") == "supported" and (repl or {}).get("same_treatment"),
-        deviations=0,
-        controls_ok=True,
-    )
+    grade = slice_grade(rig, sid)
     out = ask_json(
         ctx["llm"],
         rig.spec["seats"][seat],
