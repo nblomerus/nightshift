@@ -1,0 +1,17 @@
+- [20:50:20] system: slice created: Add the known-in-advance count of promotion weeks in the forecast window
+- [20:50:20] pi@forecast-lab: question -> hypothesis (Top screen result (+1.76%) and a natural extension of the current champion. Resolve the parked prereg by writing both tr)
+- [20:50:41] methodologist@forecast-lab: hypothesis -> prereg_draft
+- [20:50:41] methodologist@forecast-lab: prereg_draft -> design_review (rev 0, design B)
+- [20:51:34] critic@forecast-lab: design_review -> approved_design (Comparator is explicit and matched (identical ridge model, promo=false vs promo=true), the statement is falsifiable and )
+- [20:52:19] experimenter@forecast-lab: approved_design -> implementation_checked
+- [20:53:00] statistician@forecast-lab: REFUSED implementation_checked -> controls_passed: unmet guards: ['p_decisive>=0.8']
+- [20:53:00] statistician@forecast-lab: implementation_checked -> prereg_draft (underpowered)
+- [20:53:26] methodologist@forecast-lab: prereg_draft -> design_review (rev 1, design C)
+- [20:54:10] critic@forecast-lab: design_review -> approved_design (No blocking issues. Comparator (identical ridge model, promo=false) is explicit and correctly matched to the treatment ()
+- [20:54:44] experimenter@forecast-lab: approved_design -> implementation_checked
+- [20:54:49] statistician@forecast-lab: implementation_checked -> controls_passed (P(decisive) 0.92 at pilot effect +2.23%; leak canary clean)
+- [20:54:49] statistician@forecast-lab: controls_passed -> locked (84228ef24cc9)
+- [20:54:49] experimenter@forecast-lab: locked -> run
+- [20:54:49] statistician@forecast-lab: run -> analysed (supported (alpha 0.0250))
+- [20:54:52] replicator@forecast-lab: analysed -> not_replicated (inconclusive; reimplementation matched)
+- [20:55:03] writer@forecast-lab: not_replicated -> written

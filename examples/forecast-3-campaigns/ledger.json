@@ -1,0 +1,169 @@
+{
+ "campaigns": [
+  {
+   "campaign": 1,
+   "screen": {
+    "last_year_window": 0.1333455623226092,
+    "log_target": 0.0242296571125461,
+    "promo_feature": 0.01638947787090217,
+    "trend_feature": 0.0010931679035367514,
+    "strong_ridge": -2.930365790021483e-07,
+    "short_window": -0.00246765287055295,
+    "category_effects": -0.011683793953396693,
+    "clip_outliers": -0.10648040490528987
+   },
+   "tested": [
+    "last_year_window"
+   ],
+   "decisions": [
+    [
+     "last_year_window",
+     "supported",
+     "A: replicated"
+    ]
+   ],
+   "parked": [
+    "C1-S2-log_target"
+   ],
+   "promoted": "last_year_window",
+   "champion_after": "pooled ridge on demand lags 1-4 and 4/13-week rolling means + add last year's demand over the same 4-week window as a feature"
+  },
+  {
+   "campaign": 2,
+   "screen": {
+    "promo_feature": 0.017582890092413317,
+    "log_target": 0.007539954924951298,
+    "short_window": 0.0007227652973387233,
+    "strong_ridge": 0.00037478248988598306,
+    "trend_feature": 0.00035493904792482933,
+    "category_effects": -0.0066663811374032544,
+    "clip_outliers": -0.1374248097340054
+   },
+   "tested": [],
+   "decisions": [],
+   "parked": [
+    "C2-S1-promo_feature",
+    "C2-S2-log_target"
+   ],
+   "promoted": null,
+   "champion_after": "pooled ridge on demand lags 1-4 and 4/13-week rolling means + add last year's demand over the same 4-week window as a feature"
+  },
+  {
+   "campaign": 3,
+   "screen": {
+    "promo_feature": 0.017582890092413317,
+    "log_target": 0.007539954924951298,
+    "short_window": 0.0007227652973387233,
+    "strong_ridge": 0.00037478248988598306,
+    "trend_feature": 0.00035493904792482933,
+    "category_effects": -0.0066663811374032544,
+    "clip_outliers": -0.1374248097340054
+   },
+   "tested": [
+    "promo_feature"
+   ],
+   "decisions": [
+    [
+     "promo_feature",
+     "supported",
+     "B: supported, awaiting replication"
+    ]
+   ],
+   "parked": [
+    "C3-S2-log_target"
+   ],
+   "promoted": null,
+   "champion_after": "pooled ridge on demand lags 1-4 and 4/13-week rolling means + add last year's demand over the same 4-week window as a feature"
+  }
+ ],
+ "evidence": [
+  {
+   "campaign": 1,
+   "slice": "C1-S1-last_year_window",
+   "key": "last_year_window",
+   "champion": "pooled ridge on demand lags 1-4 and 4/13-week rolling means",
+   "design": "B",
+   "decision": "supported",
+   "point": 0.1369694780273435,
+   "lo": 0.09596116333013516,
+   "hi": 0.1768398790573332,
+   "replication": "supported",
+   "grade": "A: replicated",
+   "headline": "Adding last-year same-window demand feature cuts 4-week WAPE by 13.70% (Grade A, replicated)"
+  },
+  {
+   "campaign": 3,
+   "slice": "C3-S1-promo_feature",
+   "key": "promo_feature",
+   "champion": "pooled ridge on demand lags 1-4 and 4/13-week rolling means + add last year's demand over the same 4-week window as a feature",
+   "design": "C",
+   "decision": "supported",
+   "point": 0.019500626850232128,
+   "lo": 0.0014198040442695225,
+   "hi": 0.03637470371032357,
+   "replication": "inconclusive",
+   "grade": "B: supported, awaiting replication",
+   "headline": "Adding known-in-advance promo-week counts cuts next-4-week WAPE by ~2%, but replication is inconclusive"
+  }
+ ],
+ "lessons": [
+  "(after campaign 0) Exploratory screen magnitudes are not calibrated effect sizes (2 panels, noisy, multiple-comparisons/winner's-curse risk) \u2014 use them only to rank candidates, preregister confirmatory tests with fixed splits/metrics before running, and expect the confirmed effect to shrink toward zero relative to the screen, especially for the top-ranked pick.",
+  "(after campaign 1) Kill decisively-negative screen results (clip_outliers at -13.74%) without spending confirmatory budget, and keep methodologically distinct variants of the same idea (naive vs. bias-corrected log-transform) as separate preregistered hypotheses rather than conflating them under one hid \u2014 a null on one doesn't license inference about the other.",
+  "(after campaign 2) When the champion configuration changes (e.g., adding yoy), old prereg statements/constraints written against the prior champion become stale and silently conflict with frozen configs that correctly inherit the new champion's features \u2014 before locking any new prereg, explicitly re-derive both arms from the *current* champion definition rather than copying language from an earlier campaign's statement."
+ ],
+ "champion_history": [
+  {
+   "campaign": 1,
+   "promoted": "last_year_window",
+   "evidence": "C1-S1-last_year_window",
+   "from_": "pooled ridge on demand lags 1-4 and 4/13-week rolling means",
+   "to": "pooled ridge on demand lags 1-4 and 4/13-week rolling means + add last year's demand over the same 4-week window as a feature"
+  }
+ ],
+ "ledger": [
+  {
+   "slice": "C1-S1-last_year_window",
+   "digest": "088c26e5b67f",
+   "alpha": 0.025,
+   "decision": "supported",
+   "point": 0.1369694780273435,
+   "lo": 0.09596116333013516,
+   "hi": 0.1768398790573332
+  },
+  {
+   "slice": "C3-S1-promo_feature",
+   "digest": "84228ef24cc9",
+   "alpha": 0.025,
+   "decision": "supported",
+   "point": 0.019500626850232128,
+   "lo": 0.0014198040442695225,
+   "hi": 0.03637470371032357
+  }
+ ],
+ "variance_book": {
+  "last_year_window|B": {
+   "se": 0.015147261174310858,
+   "pilot_effect": 0.13174085323336937
+  },
+  "log_target|B": {
+   "se": 0.012718017568231954,
+   "pilot_effect": 0.026180580332967735
+  },
+  "log_target|C": {
+   "se": 0.009961272544689802,
+   "pilot_effect": 0.02589937902838328
+  },
+  "promo_feature|B": {
+   "se": 0.00932842207696335,
+   "pilot_effect": 0.01959933044123152
+  },
+  "promo_feature|C": {
+   "se": 0.006100175155420125,
+   "pilot_effect": 0.022337096997413264
+  }
+ },
+ "pi_next": {
+  "next": "Prioritize running the replication trial for C3-S1-promo_feature (currently grade B, supported-awaiting-replication) to determine if the ~2% WAPE gain holds; do not advance C3-S2-log_target \u2014 it stays parked until the prereg statement is corrected to accurately reflect that the frozen judge includes last-year 4-week demand in both arms (removing the overstated comparator weakness), and the critics' segment-level low-volume bias-audit follow-ups are deferred entirely since they are explicitly contingent on PR-LOGTX passing, which has not occurred.",
+  "agenda_update": "Agenda: (1) C3-S1-promo_feature -> run/confirm replication run, target promotion to established if replication holds; (2) C3-S2-log_target -> remains PARKED, requires 4th prereg revision correcting the comparator description before re-submission; (3) Two proposed low-volume/intermittent segment bias-audit hypotheses (volume-quantile split + numeric WAPE-degradation bound under naive inverse transform) logged as queued/contingent follow-ups, blocked on PR-LOGTX passing \u2014 do not schedule yet."
+ }
+}

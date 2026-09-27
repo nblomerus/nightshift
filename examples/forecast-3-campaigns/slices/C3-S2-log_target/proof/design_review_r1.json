@@ -1,0 +1,6 @@
+{
+ "verdict": "approve",
+ "blocking": [],
+ "message": "Comparator is explicit and matches the estimand (identical pooled ridge, same lag/rolling-mean features, alpha=1.0, only the target representation differs). Statement is falsifiable with concrete, non-overlapping kill criteria (CI-vs-SESOI, point-estimate sign). Design B's origin count and the YoY-feature exclusion are well-justified and correctly scoped as a separate hypothesis. The Jensen's-gap/sparse-series risk is real but is appropriately deferred to a follow-up rather than bolted on as an ill-defined kill criterion here, and since lags/rolling-mean feature construction is identical across both arms, any leakage in that feature set would not differentially bias the log-vs-raw comparison. No blocking issues. Approved as final.",
+ "new_hypothesis_for_pi": "Segment-level bias audit for the log_target treatment: preregister an ex ante volume-quantile definition of 'low-volume/intermittent' SKUs and a numeric WAPE-degradation bound for that segment under the naive inverse transform, to be tested as a follow-up if PR-LOGTX passes."
+}

@@ -1,0 +1,5 @@
+{
+ "implementable_exactly": true,
+ "mismatch": null,
+ "message": "Statement and config are aligned. Log transform with naive inverse (exp(pred)\u22121) is specified in statement; config sets log:true for treatment and log:false for comparator. No bias correction is explicit in statement; config contains no correction fields. Demand lags [1,2,3,4], rolling means [4,13], alpha=1.0, and all exclusions (no yoy, promo, trend, cat, clip, window, series_mean) match exactly between statement and config. Two-way bootstrap (series \u00d7 rolling-origin) is a valid estimation method not contradicted by config. Ready to lock and execute."
+}

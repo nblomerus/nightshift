@@ -1,0 +1,12 @@
+{
+ "hid": "yoy4wk_ridge_B",
+ "statement": "For next-4-week unit demand sum forecasts from a pooled ridge model with lags 1-4 and 4/13-week rolling means (alpha=1.0, no log/trend/cat/promo/clip/window/series_mean, naive inverse transform), adding last year's demand over the same 4-week window as a feature (treatment: yoy=true) reduces relative WAPE by at least 1.0% (SESOI) versus the identical model without that feature (comparator: yoy=false), as estimated by a two-way (series x rolling-origin) bootstrap under Design B (32 rolling origins, weeks 110-234, 260-week history).",
+ "design": "B",
+ "kills_if": "The two-way bootstrap distribution of relative WAPE reduction (treatment vs comparator) has its one-sided 97.5% lower confidence bound at or below 0%, or the point estimate falls below the 1.0% SESOI, at alpha=0.025 -- i.e. we fail to reject no-improvement or the improvement is not practically meaningful. Idea is also dropped if treatment's WAPE is worse (negative reduction) on the point estimate.",
+ "rationale": "Design A's 6 rolling origins are too coarse for a two-way bootstrap to resolve a 2.5% target effect at 80% power with alpha=0.025 per test -- resampling only 6 origins yields a highly discretized, high-variance origin-resampling distribution regardless of series resampling depth. Design B's 32 origins give enough independent origin draws to stabilize the bootstrap SE at ~5x compute, which is the cheapest design expected to meet the power spec; Design C was not offered as an allowed choice here. The treatment is exactly the locked machine config (yoy=true, all else fixed) vs the identical comparator with yoy=false -- no bias correction, no extra tuning, no alternate lag/window choices are being tested. I suspect a version with explicit deseasonalization or a ratio-to-last-year feature (rather than raw lagged level) could outperform this naive yoy feature, especially given trend/level drift over a 364-week history, but that is a distinct hypothesis and out of scope for this preregistration.",
+ "sesoi": 0.01,
+ "target_effect": 0.025,
+ "alpha": 0.025,
+ "treatment_key": "last_year_window",
+ "revision": 0
+}

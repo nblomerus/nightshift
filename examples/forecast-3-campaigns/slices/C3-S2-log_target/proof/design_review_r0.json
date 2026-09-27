@@ -1,0 +1,8 @@
+{
+ "verdict": "object",
+ "blocking": [
+  "The third kills_if clause ('log-transform treatment shows systematic degradation on low-volume/intermittent series consistent with naive inverse-transform (Jensen's-gap) bias outweighing variance-stabilization gains') has no operational definition: no threshold, no segment definition (what counts as 'low-volume/intermittent'), and no specified statistic. As written it is not falsifiable and can be invoked post-hoc to kill a result that passed the CI test, or to excuse one that didn't -- undermining the concreteness the CI-based criterion otherwise achieves. Quantify it (e.g., 'WAPE degrades on the bottom quartile-by-volume segment by more than X%, tested via the same bootstrap') or drop it and rely solely on the primary CI/point-estimate criteria."
+ ],
+ "message": "Comparator, statement, and design choice (B over A/C) are all explicit and well-justified, and the primary kill criterion (bootstrap 97.5% CI vs. 1.0% SESOI, point estimate <=0) is concrete and matches the estimand. However, the supplementary kill clause about low-volume/intermittent series degradation is qualitative -- it names a mechanism (Jensen's-gap bias) but gives no threshold, no segment definition, and no test statistic, so it isn't falsifiable as stated. Please either (a) specify it operationally -- e.g., define the low-volume segment by a volume quantile fixed ex ante, and give a numeric degradation threshold with its own test -- or (b) remove it and let the primary CI/point-estimate criteria stand alone as the sole kill conditions. Once that's fixed I'll approve; everything else in the design is sound.",
+ "new_hypothesis_for_pi": null
+}

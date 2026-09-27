@@ -1,0 +1,188 @@
+"""Daemon for the science rig: each tick, every seat reads its inbox and works its queue.
+Run from the workspace root with an `llm(prompt, system, tier) -> str` callable."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import time
+from pathlib import Path
+
+import agents as S
+from state.rig import GuardError, Rig
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_RIGSPEC = os.path.join(REPO_ROOT, "rigs", "forecast-lab.json")
+
+
+def load_rigspec(path: str | None = None) -> dict:
+    return json.loads(Path(path or DEFAULT_RIGSPEC).read_text())
+
+
+def make_ctx(llm):
+    return dict(
+        llm=llm,
+        cache={},
+        locked={},
+        ledger_rows=[],
+        alpha_per_test=0.05,
+        pi_next=None,
+        primary_seed={},
+        replication_seed={},
+        champion=dict(S.fh.BASELINE),
+        champion_desc="pooled ridge on demand lags 1-4 and 4/13-week rolling means",
+        evidence=[],
+        lessons=[],
+        variance_book={},
+        screen={},
+        champion_history=[],
+        campaign=0,
+        n_campaigns=0,
+        campaigns=[],
+    )
+
+
+def tick(rig, ctx, transcript):
+    did = False
+    for seat, spec in rig.spec["seats"].items():
+        role = spec["role"]
+        # 1) messages: questions get answered by their owner; other messages are filed as notes
+        if role == "methodologist":
+            msgs = rig.inbox(seat)
+            qs = [m for m in msgs if m["body"].strip().endswith("?")]  # questions get answers
+            for m in msgs:
+                if m not in qs:
+                    rig.note(seat, f"from {m['frm']}: {m['body'][:300]}")
+            if qs:
+                S.methodologist_answer(rig, seat, qs, ctx)
+                did = True
+        # 2) owned work
+        for task in rig.pending(seat):
+            rig.claim(seat, task["id"])
+            t0 = time.time()
+            try:
+                result = S.HANDLERS[task["kind"]](rig, seat, task, ctx)
+                rig.complete(seat, task["id"], result)
+                transcript.append(
+                    dict(seat=seat, task=task["kind"], slice=task["slice"], ok=True, s=round(time.time() - t0, 1))
+                )
+            except (GuardError, ValueError, KeyError) as e:
+                rig.complete(seat, task["id"], dict(error=str(e)), state="parked")
+                transcript.append(dict(seat=seat, task=task["kind"], slice=task["slice"], ok=False, error=str(e)))
+            did = True
+            if (
+                task["kind"] == "plan"
+                and ctx["campaign"] == 1
+                and rig.db.execute("SELECT count(*) FROM slices").fetchone()[0]
+            ):
+                # the daemon refuses an out-of-order move, whoever asks
+                sid0 = rig.db.execute("SELECT id FROM slices ORDER BY id").fetchone()[0]
+                try:
+                    rig.advance(rig.seat_for("experimenter"), sid0, "run", checks={"judge_result": True})
+                except GuardError as e:
+                    transcript.append(
+                        dict(
+                            seat=rig.seat_for("experimenter"),
+                            task="(attempted run before lock)",
+                            slice=sid0,
+                            ok=False,
+                            error=str(e),
+                        )
+                    )
+    return did
+
+
+def board(rig):
+    lines = ["## Seats", "| Seat | Kind | Owns |", "|---|---|---|"]
+    for s, v in rig.spec["seats"].items():
+        lines.append(f"| `{s}` | {v['kind']} | {v['owns']} |")
+    lines += ["", "## Slices", "| Slice | Stage |", "|---|---|"]
+    for sid, st in rig.db.execute("SELECT id, stage FROM slices ORDER BY id"):
+        lines.append(f"| {sid} | {st} |")
+    lines += [
+        "",
+        "## Queue (every task has an owner)",
+        "| # | Kind | Slice | Creator → Owner | State |",
+        "|---|---|---|---|---|",
+    ]
+    for r in rig.db.execute("SELECT id, kind, slice, creator, owner, state FROM tasks ORDER BY id"):
+        lines.append(f"| {r[0]} | {r[1]} | {r[2]} | {r[3].split('@')[0]} → {r[4].split('@')[0]} | {r[5]} |")
+    lines += ["", "## Messages (send: questions and answers, no state change)", ""]
+    for r in rig.db.execute("SELECT id, frm, to_seat, slice, body FROM messages ORDER BY id"):
+        lines.append(f"**#{r[0]} {r[1].split('@')[0]} → {r[2].split('@')[0]}** ({r[3]}): {r[4]}\n")
+    lines += ["## Workflow guard log", "| Slice | Seat | From → To | Allowed | Note |", "|---|---|---|---|---|"]
+    for r in rig.db.execute("SELECT slice, seat, frm, to_stage, ok, note FROM slice_events"):
+        lines.append(
+            f"| {r[0]} | {r[1].split('@')[0]} | {r[2]} → {r[3]} | "
+            f"{'yes' if r[4] else '**REFUSED**'} | {(r[5] or '')[:110]} |"
+        )
+    return "\n".join(lines)
+
+
+def run(llm, root="runs/latest", max_ticks=40, n_campaigns=3, rigspec: str | None = None):
+    """The outer feedback loop. Each campaign: explore (cheap, exploratory) -> PI plans from the
+    evidence ledger + lessons -> slices run the preregistered workflow -> champion is promoted only on
+    a replicated result -> lessons and variance estimates carry into the next campaign."""
+    if os.path.exists(root):
+        shutil.rmtree(root)
+    spec = load_rigspec(rigspec)
+    rig, ctx, transcript = Rig(root, spec), make_ctx(llm), []
+    Path(root, "rigspec.json").write_text(json.dumps(spec, indent=1))  # the dashboard reads this copy
+    ctx["n_campaigns"] = n_campaigns
+    for k in range(1, n_campaigns + 1):
+        ctx["campaign"] = k
+        screen = S.explorer_screen(ctx)
+        rig.send(
+            rig.seat_for("pi"),
+            rig.seat_for("pi"),
+            "(explorer) exploratory screen vs champion: " + ", ".join(f"{a} {b:+.2%}" for a, b in screen.items()),
+        )
+        rig.queue("human" if k == 1 else rig.seat_for("pi"), rig.seat_for("pi"), "plan", None, {"campaign": k})
+        n_before = len(ctx["evidence"])
+        for _ in range(max_ticks):
+            if not tick(rig, ctx, transcript):
+                break
+        promoted = S.promote_champion(rig, ctx)
+        new = ctx["evidence"][n_before:]
+        parked = [
+            sid
+            for sid, st in rig.db.execute("SELECT id, stage FROM slices WHERE id LIKE ?", (f"C{k}-%",))
+            if st == "parked"
+        ]
+        ctx["campaigns"].append(
+            dict(
+                campaign=k,
+                screen=screen,
+                tested=[e["key"] for e in new],
+                decisions=[(e["key"], e["decision"], e["grade"]) for e in new],
+                parked=parked,
+                promoted=promoted,
+                champion_after=ctx["champion_desc"],
+            )
+        )
+        write_ledger(root, ctx)  # the dashboard reads this live
+        if not new and not parked:
+            break  # PI chose nothing worth testing: the loop converged
+    msgs = rig.inbox(rig.seat_for("pi"))
+    if msgs:
+        S.pi_read(rig, rig.seat_for("pi"), msgs, ctx)
+    Path(root, "BOARD.md").write_text(board(rig))
+    Path(root, "transcript.json").write_text(json.dumps(transcript, indent=1))
+    write_ledger(root, ctx)
+    return rig, ctx, transcript
+
+
+def write_ledger(root, ctx):
+    tmp = os.path.join(root, "ledger.json.tmp")
+    payload = dict(
+        campaigns=ctx["campaigns"],
+        evidence=ctx["evidence"],
+        lessons=ctx["lessons"],
+        champion_history=ctx["champion_history"],
+        ledger=ctx["ledger_rows"],
+        variance_book={f"{a}|{b}": v for (a, b), v in ctx["variance_book"].items()},
+        pi_next=ctx["pi_next"],
+    )
+    Path(tmp).write_text(json.dumps(payload, indent=1, default=str))
+    os.replace(tmp, os.path.join(root, "ledger.json"))

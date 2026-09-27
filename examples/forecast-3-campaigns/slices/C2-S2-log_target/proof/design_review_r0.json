@@ -1,0 +1,6 @@
+{
+ "verdict": "approve",
+ "blocking": [],
+ "message": "Comparator (raw-demand ridge, alpha=1.0, lags 1-4 + 4/13-week rolling means, no yoy/promo/trend/category/clip/window/series_mean) is explicit and identical across arms except for the target transform, so the contrast isolates the log-transform effect cleanly. The statement is falsifiable and matches the estimand (relative WAPE reduction on the 4-week unit-sum forecast, two-way bootstrap on design B). kills_if is concrete and pre-specifies both the non-positive-point-estimate and CI-below-SESOI outcomes. No leakage concern: lags/rolling-mean features are pre-origin by construction and the same feature set is used in both arms, so even if lag alignment details for the 4-week horizon aren't spelled out, any such effect would apply symmetrically and not bias the treatment-vs-comparator contrast. Design B's origin count/history length is adequately justified against A (underpowered) and C (reserved for replication). Approved as written.",
+ "new_hypothesis_for_pi": null
+}

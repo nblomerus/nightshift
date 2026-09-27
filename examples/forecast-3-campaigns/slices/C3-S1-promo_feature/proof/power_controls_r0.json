@@ -1,0 +1,13 @@
+{
+ "design": "B",
+ "alpha": 0.025,
+ "pilot_se": 0.00932842207696335,
+ "pilot_effect": 0.01959933044123152,
+ "p_decisive": 0.4441913141397114,
+ "power_at_target": 0.6695166642174015,
+ "target_effect": 0.025,
+ "leak_canary": false,
+ "positive_control": "supported",
+ "negative_control": "no_effect",
+ "admissible": true
+}

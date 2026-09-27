@@ -1,0 +1,12 @@
+# Runtime
+numpy
+scipy
+pandas<3  # suite verified on pandas 2.3; lift the cap in its own PR with a test run
+
+# Dev / test (same tools as lab-foundry)
+pytest
+pytest-timeout
+pytest-cov
+ruff==0.15.14  # keep in sync with .pre-commit-config.yaml and CI
+pre-commit
+matplotlib     # figures in eval/

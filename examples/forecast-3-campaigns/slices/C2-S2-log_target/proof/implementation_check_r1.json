@@ -1,0 +1,5 @@
+{
+ "implementable_exactly": false,
+ "mismatch": "Comparator specification differs. Statement specifies comparator trained on raw demand WITHOUT yoy feature ('identical model...absence of yoy/promo/trend/category/clip/window/series_mean features'). Config specifies comparator WITH yoy=true. Treatment adds log transform; comparator should isolate that change by holding all other features constant at their absence.",
+ "message": "The statement's comparator explicitly excludes yoy as a control baseline ('no yoy, promo, trend, category, clip, window, or series_mean features'). The frozen judge config includes yoy=true in both arms. This confounds the log-transform treatment with the addition of last-year's demand. To test log transform in isolation, either: (1) update statement to accept yoy in both arms, or (2) update config comparator to yoy=false. The current config will measure the combined effect of log transform + yoy feature, not log transform alone."
+}

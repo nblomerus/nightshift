@@ -1,0 +1,1 @@
+- answer from methodologist@forecast-lab: Per the prereg rationale, YoY is false for both arms: "no YoY term in either arm per the machine config (yoy:false)" -- this explicitly locks yoy=false for both treatment and comparator. The statement

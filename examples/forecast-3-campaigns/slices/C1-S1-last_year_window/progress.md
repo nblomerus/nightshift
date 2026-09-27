@@ -1,0 +1,13 @@
+- [20:39:31] system: slice created: Add last year's demand over the same 4-week window as a feature
+- [20:39:31] pi@forecast-lab: question -> hypothesis (Largest exploratory lift (+13.33%) by a wide margin; plausible mechanism (seasonal/anchor signal known in advance for a )
+- [20:39:31] experimenter@forecast-lab: REFUSED hypothesis -> run: no edge hypothesis -> run
+- [20:39:51] methodologist@forecast-lab: hypothesis -> prereg_draft
+- [20:39:51] methodologist@forecast-lab: prereg_draft -> design_review (rev 0, design B)
+- [20:40:53] critic@forecast-lab: design_review -> approved_design (Comparator is explicit and minimal (identical pooled-ridge config, yoy=true vs yoy=false, no incidental changes to lags/)
+- [20:41:43] experimenter@forecast-lab: approved_design -> implementation_checked
+- [20:41:47] statistician@forecast-lab: implementation_checked -> controls_passed (P(decisive) 1.00 at pilot effect +13.17%; leak canary clean)
+- [20:41:47] statistician@forecast-lab: controls_passed -> locked (088c26e5b67f)
+- [20:41:47] experimenter@forecast-lab: locked -> run
+- [20:42:47] statistician@forecast-lab: run -> analysed (supported (alpha 0.0250))
+- [20:42:52] replicator@forecast-lab: analysed -> replicated (supported; reimplementation matched)
+- [20:43:11] writer@forecast-lab: replicated -> written

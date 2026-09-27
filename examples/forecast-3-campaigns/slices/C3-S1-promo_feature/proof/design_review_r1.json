@@ -1,0 +1,6 @@
+{
+ "verdict": "approve",
+ "blocking": [],
+ "message": "No blocking issues. Comparator (identical ridge model, promo=false) is explicit and correctly matched to the treatment (promo=true); the statement is falsifiable and its estimand (two-way bootstrap mean difference in relative WAPE) matches the stated test. kills_if is concrete and appropriately conservative (CI/SESOI check plus placebo and positive-control gates). The design escalation from B to C is justified with pilot numbers (power 0.67 at B vs 80% target) rather than asserted by fiat. The rationale correctly scopes this prereg to the promo-count treatment only and defers the YoY-window feature to its own separate hypothesis, resolving the earlier conflation. Feature is described as known-in-advance with a clean leak canary, so no forecast-time leakage concern from the text as written. Approved.",
+ "new_hypothesis_for_pi": null
+}

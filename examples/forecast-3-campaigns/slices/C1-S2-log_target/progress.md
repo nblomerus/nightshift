@@ -1,0 +1,13 @@
+- [20:39:31] system: slice created: Model log(1+demand) instead of raw demand
+- [20:39:31] pi@forecast-lab: question -> hypothesis (Second-largest, plausible, low-risk change (distributional transform, not a new feature source) with a consistent modera)
+- [20:40:12] methodologist@forecast-lab: hypothesis -> prereg_draft
+- [20:40:12] methodologist@forecast-lab: prereg_draft -> design_review (rev 0, design B)
+- [20:41:41] critic@forecast-lab: design_review -> approved_design (Comparator is explicit (pooled ridge, lags 1-4 + 4/13-week rolling means, alpha=1.0, raw-demand control) and the treatme)
+- [20:41:46] experimenter@forecast-lab: approved_design -> implementation_checked
+- [20:41:47] statistician@forecast-lab: REFUSED implementation_checked -> controls_passed: unmet guards: ['p_decisive>=0.8']
+- [20:41:47] statistician@forecast-lab: implementation_checked -> prereg_draft (underpowered)
+- [20:42:03] methodologist@forecast-lab: prereg_draft -> design_review (rev 1, design C)
+- [20:42:47] critic@forecast-lab: design_review -> approved_design (Comparator is explicit and isolates exactly one variable (target transform), holding features/alpha/design fixed. Statem)
+- [20:42:50] experimenter@forecast-lab: approved_design -> implementation_checked
+- [20:43:12] statistician@forecast-lab: REFUSED implementation_checked -> controls_passed: unmet guards: ['p_decisive>=0.8']
+- [20:43:12] statistician@forecast-lab: implementation_checked -> parked (underpowered at largest design)

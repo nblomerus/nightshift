@@ -1,0 +1,43 @@
+# Tooling config for Nightshift (ruff / pytest / coverage). Like lab-foundry, Nightshift runs as an
+# application, not an installable package: the top-level domain folders (agents/, harness/, state/,
+# science/, judges/, api/, ops/, eval/) are importable from the repo root — no install step. Runtime
+# deps are pinned in requirements.txt (pip-compiled from requirements.in); the canonical version
+# lives in the `version` file (bump it on every PR — CI checks).
+
+[tool.ruff]
+line-length = 122  # matches lab-foundry
+target-version = "py311"
+extend-exclude = ["web", "runs", "examples"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "I",   # isort
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"agents/*/handler.py" = ["E501"]   # LLM prompt strings
+"agents/common.py" = ["E501"]
+"judges/forecast.py" = ["E501", "E741", "E702"]
+"eval/*.py" = ["E501", "E701", "E702", "E731", "E741", "B007", "SIM108"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+# Per-test wall-clock cap (pytest-timeout): trips only on a genuine hang.
+timeout = 120
+
+[tool.coverage.run]
+source = ["agents", "harness", "state", "science", "judges", "api", "ops"]
+branch = true
+omit = ["tests/*", "eval/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 75

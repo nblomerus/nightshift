@@ -1,0 +1,8 @@
+{
+ "verdict": "object",
+ "blocking": [
+  "kills_if is internally contradictory: it says the result is killed if the CI 'includes 0 or excludes values >=1.0%', but the parenthetical clarifies this as 'lower bound <= SESOI of 1.0%' \u2014 those are not the same test. A CI of e.g. [0.5%, 3%] does NOT exclude values >=1.0% (it contains 2%, 3%), so the literal clause would NOT trigger a kill, while the parenthetical (lower bound 0.5% <= 1.0%) says it SHOULD be killed. This divergence is exactly the kind of ambiguity that lets the kill criterion be argued either way after the CI is seen. Before data exists, kills_if must be a single unambiguous rule."
+ ],
+ "message": "Comparator, estimand, and treatment/comparator naming are all fine and this is clearly scoped to the promo-count feature only (correctly separating it from the yoy proposal). One blocking fix needed: rewrite kills_if as a single non-contradictory rule. Given the stated intent, I read the operative test as: establish the effect only if the 97.5% CI lower bound for relative WAPE reduction is > 1.0% (SESOI); otherwise kill (including if the CI contains 0 or the point estimate is negative, both of which are already implied whenever the lower bound is <=1.0%, so those clauses are redundant but harmless). Please replace 'includes 0 or excludes values >=1.0% (i.e., lower bound <= SESOI of 1.0%)' with the single clause 'the CI lower bound is <= 1.0% (SESOI)' \u2014 drop the 'excludes values >=1.0%' phrasing entirely, since as literally written it describes a stronger and different condition than the lower-bound rule you intend. Resubmit with that line fixed and I'll approve.",
+ "new_hypothesis_for_pi": null
+}

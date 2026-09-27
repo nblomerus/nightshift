@@ -1,0 +1,5 @@
+{
+ "implementable_exactly": true,
+ "mismatch": null,
+ "message": "Statement and config are aligned. Treatment adds promo feature (known-in-advance promotion week count); comparator omits it. Both use identical ridge specification (alpha=1.0, lags 1-4, rolling means 4/13, yoy=true, no log/trend/category/centering). Statement specifies Design C bootstrap (58 rolling origins, weeks 110-338, 364-week history) and SESOI=1.0% relative WAPE reduction on unit sum. Config locks the feature flags and hyperparameters. No contradictions or undeclared components detected."
+}

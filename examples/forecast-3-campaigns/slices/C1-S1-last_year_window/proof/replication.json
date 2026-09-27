@@ -1,0 +1,7 @@
+{
+ "reimplemented_as": "last_year_window",
+ "same_treatment": true,
+ "seed": 8600,
+ "decision": "supported",
+ "reasoning": "The preregistration explicitly states the treatment is 'adding last year's demand over the same 4-week window as a feature (treatment: yoy=true)' versus the comparator without it (yoy=false). All other model specifications\u2014pooled ridge, lags 1-4, 4/13-week rolling means, alpha=1.0, no log/trend/cat/promo/clip/window/series_mean, naive inverse transform\u2014are held constant. The only difference between treatment and comparator is the presence of the year-over-year lagged feature. The option 'last_year_window' directly matches this description."
+}

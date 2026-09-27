@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environment
+.env
+.DS_Store
+*.code-workspace
+
+# Run output (examples/ holds the recorded runs worth keeping)
+runs/

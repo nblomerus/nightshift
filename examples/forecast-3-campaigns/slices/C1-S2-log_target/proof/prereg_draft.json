@@ -1,0 +1,12 @@
+{
+ "hid": "logdem-v1",
+ "statement": "For the pooled ridge model (alpha=1.0) on demand lags [1,2,3,4] and 4/13-week rolling means (no yoy, promo, trend, cat, clip, window, or series_mean features), training and predicting on log(1+demand) with a naive inverse transform exp(pred)-1 and no bias correction reduces relative WAPE of the next-4-week unit-sum forecast by at least 2.5% versus the identical pooled ridge trained and predicted on raw demand, as estimated by a two-way (series x rolling-origin) bootstrap.",
+ "design": "C",
+ "kills_if": "The two-way bootstrap one-sided 97.5% CI (alpha=0.025 per test) lower bound on relative WAPE reduction is at or below the 1.0% SESOI (this includes any result where the point estimate is null or negative, i.e., the log-transformed model is no better or worse than raw). If so, this exact naive log-transform treatment is dropped.",
+ "rationale": "Design B was piloted and found underpowered: at the pilot effect of +2.62% (SE 1.27%), probability of a decisive result is only 0.43, and power at the PI-fixed 2.5% target effect is 0.39 - well short of the 80% standard, so B cannot be locked. Design A (6 origins) was already ruled out as too noisy for a stable two-way bootstrap variance estimate at alpha=0.025. Design C's 58 origins over a 364-week history give the additional independent origin draws needed to resolve an effect near the 1.0% SESOI/2.5% target at the required power, and the ~10x compute cost is justified given B's failure; the leak canary was clean and the positive/placebo controls behaved as expected (supported/no_effect), so the pilot's power shortfall reflects sample size, not a pipeline defect. Note on the treatment itself: log(1+demand) with a naive back-transform and no bias correction is expected to systematically underpredict (Jensen's-gap shrinkage toward zero under skewed demand), so a null or negative result here would not rule out a bias-corrected log-transform variant (e.g., with a smearing/exponential-of-variance correction) - that would need to be preregistered separately since the frozen judge here evaluates only the exact naive transform specified.",
+ "sesoi": 0.01,
+ "target_effect": 0.025,
+ "alpha": 0.025,
+ "treatment_key": "log_target",
+ "revision": 1
+}

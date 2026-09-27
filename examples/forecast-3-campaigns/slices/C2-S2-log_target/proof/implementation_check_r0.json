@@ -1,0 +1,5 @@
+{
+ "implementable_exactly": false,
+ "mismatch": "Comparator specification conflict: statement claims 'identical model trained on raw demand' (no yoy feature); config specifies comparator with yoy=true. Statement explicitly excludes yoy; config includes it in both arms.",
+ "message": "The prereg statement says the comparator is 'the identical model trained on raw demand'\u2014meaning all features and hyperparameters match the treatment except log transform is off. The statement also explicitly lists what is NOT in the model: 'no yoy, promo, trend, category, clip, window, or series_mean features.' The frozen judge config adds yoy=true to the comparator, which contradicts the stated design. Decide: (1) add yoy to the treatment statement ('...with demand lags [1,2,3,4], 4/13-week rolling means, AND last-4-week prior-year demand...'), or (2) set comparator.yoy=false to match the statement. The treatment config already has yoy=true, so option 1 (revise statement) aligns with what the judge will run."
+}

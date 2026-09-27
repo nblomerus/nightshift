@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff==0.15.14  # keep in sync with requirements.in and .pre-commit-config.yaml
+      - run: ruff check .
+      - run: ruff format --check .
+      - name: Version must increase
+        if: github.event_name == 'pull_request'
+        run: |
+          base=$(git show "origin/${{ github.base_ref }}:version")
+          head=$(cat version)
+          echo "base=$base head=$head"
+          python -c "import sys; v=lambda s: tuple(map(int, s.split('.'))); sys.exit(v('$head') <= v('$base'))" \
+            || { echo "::error::bump the version file (base $base, head $head)"; exit 1; }
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest --cov
+        env:
+          PYTHONPATH: ${{ github.workspace }}

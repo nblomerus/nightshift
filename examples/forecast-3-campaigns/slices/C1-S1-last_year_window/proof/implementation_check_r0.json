@@ -1,0 +1,5 @@
+{
+ "implementable_exactly": true,
+ "mismatch": null,
+ "message": "Statement and config are in agreement. The treatment adds yoy=true (last year's 4-week demand) to an otherwise identical ridge model; comparator has yoy=false. Both use lags [1,2,3,4], rolls [4,13], alpha=1.0, and all other hyperparameters match. The SESOI (1.0% relative WAPE reduction), design (Design B, 32 rolling origins, weeks 110-234, 260-week history), and evaluation method (two-way bootstrap) are specified in the statement and do not contradict the config. The frozen judge can implement this exactly as written."
+}

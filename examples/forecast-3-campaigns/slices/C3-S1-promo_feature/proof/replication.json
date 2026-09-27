@@ -1,0 +1,7 @@
+{
+ "reimplemented_as": "promo_feature",
+ "same_treatment": true,
+ "seed": 8800,
+ "decision": "inconclusive",
+ "reasoning": "The statement specifies the treatment is 'adding the known-in-advance count of promotion weeks falling in the 4-week forecast window' (promo=true) versus a comparator model without that feature (promo=false). All other specified model parameters are held constant: alpha=1.0 (not strong_ridge), no log transform (not log_target), no trend/category terms (not trend_feature or category_effects), no series-mean centering, and a 364-week history (not short_window). The comparator explicitly adds 'last year's demand over the same 4-week window as a feature' \u2014 this is the baseline feature set, not the treatment. The treatment effect is isolated to promo_feature alone."
+}

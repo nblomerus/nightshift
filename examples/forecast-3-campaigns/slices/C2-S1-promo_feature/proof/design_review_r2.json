@@ -1,0 +1,6 @@
+{
+ "verdict": "approve",
+ "blocking": [],
+ "message": "Comparator is explicit (promo=true vs promo=false, all else fixed), the estimand matches the design (Design B, two-way bootstrap, 97.5% CI lower bound vs 1.0% SESOI), and kills_if is concrete and subsumes CI-includes-zero/negative-point-estimate cases. The promo-count feature is specified as known-in-advance for the forecast window, so no forecast-time leakage. Prior ambiguities (yoy status, inverse-transform/bias-correction treatment) are now explicitly locked and identical across arms. No blocking issues remain.",
+ "new_hypothesis_for_pi": null
+}

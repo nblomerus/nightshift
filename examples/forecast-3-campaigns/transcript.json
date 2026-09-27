@@ -1,0 +1,422 @@
+[
+ {
+  "seat": "pi@forecast-lab",
+  "task": "plan",
+  "slice": null,
+  "ok": true,
+  "s": 13.2
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "(attempted run before lock)",
+  "slice": "C1-S1-last_year_window",
+  "ok": false,
+  "error": "no edge hypothesis -> run"
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C1-S1-last_year_window",
+  "ok": true,
+  "s": 20.1
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C1-S2-log_target",
+  "ok": true,
+  "s": 20.4
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C1-S1-last_year_window",
+  "ok": true,
+  "s": 41.1
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C1-S2-log_target",
+  "ok": true,
+  "s": 48.2
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "check_implementation",
+  "slice": "C1-S1-last_year_window",
+  "ok": true,
+  "s": 2.3
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "check_implementation",
+  "slice": "C1-S2-log_target",
+  "ok": true,
+  "s": 2.4
+ },
+ {
+  "seat": "statistician@forecast-lab",
+  "task": "power_controls",
+  "slice": "C1-S1-last_year_window",
+  "ok": true,
+  "s": 0.7
+ },
+ {
+  "seat": "statistician@forecast-lab",
+  "task": "power_controls",
+  "slice": "C1-S2-log_target",
+  "ok": true,
+  "s": 0.4
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "run_experiment",
+  "slice": "C1-S1-last_year_window",
+  "ok": true,
+  "s": 0.1
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C1-S2-log_target",
+  "ok": true,
+  "s": 16.2
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C1-S2-log_target",
+  "ok": true,
+  "s": 44.1
+ },
+ {
+  "seat": "statistician@forecast-lab",
+  "task": "analyse",
+  "slice": "C1-S1-last_year_window",
+  "ok": true,
+  "s": 0.1
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "check_implementation",
+  "slice": "C1-S2-log_target",
+  "ok": true,
+  "s": 2.4
+ },
+ {
+  "seat": "replicator@forecast-lab",
+  "task": "replicate",
+  "slice": "C1-S1-last_year_window",
+  "ok": true,
+  "s": 2.5
+ },
+ {
+  "seat": "writer@forecast-lab",
+  "task": "write",
+  "slice": "C1-S1-last_year_window",
+  "ok": true,
+  "s": 18.2
+ },
+ {
+  "seat": "statistician@forecast-lab",
+  "task": "power_controls",
+  "slice": "C1-S2-log_target",
+  "ok": true,
+  "s": 1.7
+ },
+ {
+  "seat": "pi@forecast-lab",
+  "task": "plan",
+  "slice": null,
+  "ok": true,
+  "s": 19.2
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C2-S1-promo_feature",
+  "ok": true,
+  "s": 22.3
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C2-S2-log_target",
+  "ok": true,
+  "s": 22.8
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C2-S1-promo_feature",
+  "ok": true,
+  "s": 54.5
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C2-S2-log_target",
+  "ok": true,
+  "s": 48.3
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "check_implementation",
+  "slice": "C2-S2-log_target",
+  "ok": true,
+  "s": 3.9
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C2-S1-promo_feature",
+  "ok": true,
+  "s": 10.2
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C2-S2-log_target",
+  "ok": true,
+  "s": 58.9
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C2-S1-promo_feature",
+  "ok": true,
+  "s": 40.0
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C2-S2-log_target",
+  "ok": true,
+  "s": 32.8
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "check_implementation",
+  "slice": "C2-S1-promo_feature",
+  "ok": true,
+  "s": 3.5
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "check_implementation",
+  "slice": "C2-S2-log_target",
+  "ok": true,
+  "s": 3.4
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C2-S1-promo_feature",
+  "ok": true,
+  "s": 24.0
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C2-S2-log_target",
+  "ok": true,
+  "s": 19.6
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C2-S1-promo_feature",
+  "ok": true,
+  "s": 10.2
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C2-S2-log_target",
+  "ok": true,
+  "s": 29.0
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "check_implementation",
+  "slice": "C2-S1-promo_feature",
+  "ok": true,
+  "s": 2.8
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "check_implementation",
+  "slice": "C2-S2-log_target",
+  "ok": true,
+  "s": 2.4
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C2-S1-promo_feature",
+  "ok": true,
+  "s": 0.0
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C2-S2-log_target",
+  "ok": true,
+  "s": 0.0
+ },
+ {
+  "seat": "pi@forecast-lab",
+  "task": "plan",
+  "slice": null,
+  "ok": true,
+  "s": 19.9
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C3-S1-promo_feature",
+  "ok": true,
+  "s": 20.6
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C3-S2-log_target",
+  "ok": true,
+  "s": 25.7
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C3-S1-promo_feature",
+  "ok": true,
+  "s": 27.3
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C3-S2-log_target",
+  "ok": true,
+  "s": 41.7
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "check_implementation",
+  "slice": "C3-S1-promo_feature",
+  "ok": true,
+  "s": 3.7
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C3-S2-log_target",
+  "ok": true,
+  "s": 17.6
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C3-S2-log_target",
+  "ok": true,
+  "s": 23.0
+ },
+ {
+  "seat": "statistician@forecast-lab",
+  "task": "power_controls",
+  "slice": "C3-S1-promo_feature",
+  "ok": true,
+  "s": 0.4
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "check_implementation",
+  "slice": "C3-S2-log_target",
+  "ok": true,
+  "s": 3.3
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C3-S1-promo_feature",
+  "ok": true,
+  "s": 14.8
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C3-S2-log_target",
+  "ok": true,
+  "s": 25.1
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C3-S1-promo_feature",
+  "ok": true,
+  "s": 19.8
+ },
+ {
+  "seat": "critic@forecast-lab",
+  "task": "review_design",
+  "slice": "C3-S2-log_target",
+  "ok": true,
+  "s": 30.4
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "check_implementation",
+  "slice": "C3-S1-promo_feature",
+  "ok": true,
+  "s": 2.7
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "check_implementation",
+  "slice": "C3-S2-log_target",
+  "ok": true,
+  "s": 3.9
+ },
+ {
+  "seat": "methodologist@forecast-lab",
+  "task": "draft_prereg",
+  "slice": "C3-S2-log_target",
+  "ok": true,
+  "s": 0.0
+ },
+ {
+  "seat": "statistician@forecast-lab",
+  "task": "power_controls",
+  "slice": "C3-S1-promo_feature",
+  "ok": true,
+  "s": 1.2
+ },
+ {
+  "seat": "experimenter@forecast-lab",
+  "task": "run_experiment",
+  "slice": "C3-S1-promo_feature",
+  "ok": true,
+  "s": 0.4
+ },
+ {
+  "seat": "statistician@forecast-lab",
+  "task": "analyse",
+  "slice": "C3-S1-promo_feature",
+  "ok": true,
+  "s": 0.1
+ },
+ {
+  "seat": "replicator@forecast-lab",
+  "task": "replicate",
+  "slice": "C3-S1-promo_feature",
+  "ok": true,
+  "s": 3.1
+ },
+ {
+  "seat": "writer@forecast-lab",
+  "task": "write",
+  "slice": "C3-S1-promo_feature",
+  "ok": true,
+  "s": 10.4
+ }
+]

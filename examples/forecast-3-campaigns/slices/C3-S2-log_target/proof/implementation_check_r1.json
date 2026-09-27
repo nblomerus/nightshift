@@ -1,0 +1,5 @@
+{
+ "implementable_exactly": false,
+ "mismatch": "Statement claims 'no YoY' (treatment); config sets yoy=true for both arms. Statement specifies 'naive inverse transform (treatment) reduces WAPE\u2026against\u2026pooled ridge on demand\u2026+ add last year's demand'; config shows comparator includes yoy=true, making it not the 'identical pooled ridge model on raw demand' claimed in the statement.",
+ "message": "The preregistered comparator arm in the statement is pooled ridge without YoY features. The frozen judge config adds yoy=true to both treatment and comparator. This changes the comparator baseline and invalidates the stated contrast ('identical pooled ridge model on raw demand'). Clarify: does the comparator arm include YoY (last-4-week demand feature), or should the config set yoy=false for comparator to match the statement?"
+}

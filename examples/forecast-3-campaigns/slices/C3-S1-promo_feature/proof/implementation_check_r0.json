@@ -1,0 +1,5 @@
+{
+ "implementable_exactly": true,
+ "mismatch": null,
+ "message": "Statement and config are aligned. The statement specifies the pooled ridge model structure (lags 1-4, rolls 4/13-week, no transforms/trend/category/centering, alpha=1.0), the treatment (promo count feature added), the comparator (identical without promo), the outcome (relative WAPE of 4-week unit sum), the SESOI (1.0%), and the evaluation design (2-way bootstrap, 32 rolling origins, weeks 110-234). The config operationalizes this exactly: treatment adds promo=true to the base model; comparator keeps promo=false. Both include yoy=true (last year's 4-week demand as feature), which is stated in the frozen judge description and consistent with the statement's 'comparator' specification ('identical model without that feature' = without promo only). No corrections, bias adjustments, or additional features are claimed. The statement is implementable from this config without contradiction."
+}

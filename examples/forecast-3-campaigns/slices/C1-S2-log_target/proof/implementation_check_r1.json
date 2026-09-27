@@ -1,0 +1,5 @@
+{
+ "implementable_exactly": true,
+ "mismatch": null,
+ "message": "Statement and config are aligned. Statement specifies: log transform on treatment, raw demand on comparator, pooled ridge alpha=1.0, lags [1,2,3,4], rolling means [4,13], no auxiliary features (yoy, promo, trend, cat, clip, window, series_mean), naive inverse transform exp(pred)-1 with no bias correction, two-way bootstrap on next-4-week unit-sum forecast, threshold \u22652.5% relative WAPE reduction. Config locks both arms identically except log=true/false, which is the sole treatment. No contradictions, no missing components, no extra claims."
+}

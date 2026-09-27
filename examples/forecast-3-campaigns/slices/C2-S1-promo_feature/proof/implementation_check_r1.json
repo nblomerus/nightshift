@@ -1,0 +1,5 @@
+{
+ "implementable_exactly": false,
+ "mismatch": "Statement specifies 'naive inverse transform, no bias correction' as part of treatment definition; config contains no inverse-transform or bias-correction parameters. Statement also specifies comparator as 'identical model without that feature' (promo=false only); config comparator includes yoy=true, which is NOT in the stated comparator description ('pooled ridge on demand lags 1-4 and 4/13-week rolling means' alone). The frozen judge config adds yoy as a standing feature in both arms, but the statement's comparator framing omits it.",
+ "message": "Clarify: (1) Are inverse transforms and bias corrections applied uniformly to both arms post-hoc (not model parameters), or should they be added to the config? (2) Does the comparator include yoy=true as a standing feature, or is it promo=false against a baseline without yoy? The config shows yoy in both; the statement's comparator language suggests it should not be there."
+}

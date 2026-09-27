@@ -1,0 +1,6 @@
+{
+ "verdict": "approve",
+ "blocking": [],
+ "message": "Comparator is explicit and isolates exactly one variable (target transform), holding features/alpha/design fixed. Statement and kills_if are concrete and match the estimand (two-way bootstrap CI on relative WAPE reduction vs. SESOI). Escalation from B to C is adequately motivated by B's documented power shortfall (0.39 at target, 0.43 probability of decisive result) plus a clean leak canary and passing controls, so the power problem is attributed to sample size rather than a pipeline defect. No leakage concern: lags/rolling-mean features are unchanged from the already-vetted B pipeline, and only the target transform (log_target) differs between arms. No blocking issues; approved as final.",
+ "new_hypothesis_for_pi": "Consider a separate preregistration for a bias-corrected log-transform variant (e.g., smearing estimator or exp(pred + sigma^2/2)-1 correction) as its own hid, since the current design explicitly tests only the naive uncorrected back-transform and a null/negative result here would not rule out the corrected variant."
+}

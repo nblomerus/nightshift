@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nightshift · lab floor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--bg:#0f1216;--panel:#161b21;--line:#252c35;--ink:#d9dee5;--dim:#8a94a3;--msg:#f0a500;--task:#4ea1ff;--ok:#3fbf7f;--bad:#ef5b5b;--code:#b58cff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.2px}
+.badge{border:1px solid var(--line);border-radius:999px;padding:2px 10px;color:var(--dim);white-space:nowrap}
+.badge b{color:var(--ink);font-weight:600}
+.controls{margin-left:auto;display:flex;gap:8px;align-items:center}
+button,select{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer;font:inherit}
+button:hover{border-color:#3a4552}
+#scrub{width:320px;accent-color:var(--task)}
+#clock{color:var(--dim);font-variant-numeric:tabular-nums;min-width:110px}
+main{display:grid;grid-template-columns:minmax(520px,1.2fr) minmax(380px,1fr);grid-template-rows:auto auto auto;gap:12px;padding:12px 16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);margin:0 0 8px;font-weight:600;display:flex;gap:10px;align-items:center}
+#floorCard{grid-row:1}
+#feedCard{grid-row:1 / span 2;display:flex;flex-direction:column;max-height:calc(100vh - 90px)}
+#boardCard{grid-column:1}
+#inspCard{grid-column:1 / span 2}
+svg{width:100%;height:auto;display:block}
+.node circle,.node rect{fill:#1d242c;stroke:#3a4552;stroke-width:1.5}
+.node.working circle,.node.working rect{stroke:var(--task);stroke-width:2.5}
+.node.working .halo{opacity:1}
+.halo{fill:none;stroke:var(--task);stroke-width:1;opacity:0;animation:pulse 1.6s ease-out infinite}
+@keyframes pulse{0%{r:36;opacity:.8}100%{r:52;opacity:0}}
+.node text{fill:var(--ink);text-anchor:middle;font-size:12px}
+.node .addr{fill:var(--dim);font-size:10px}
+.node .doing{fill:var(--task);font-size:10.5px}
+.node.code rect{stroke:var(--code)}
+.node{cursor:pointer}
+.edge{fill:none;stroke-width:2.2}
+.edge.msg{stroke:var(--msg);stroke-dasharray:6 5;animation:flow .6s linear infinite}
+.edge.task{stroke:var(--task)}
+@keyframes flow{to{stroke-dashoffset:-22}}
+.legend{display:flex;gap:14px;color:var(--dim);font-size:11.5px;flex-wrap:wrap}
+.legend i{display:inline-block;width:18px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+.chips{display:flex;gap:6px;margin-left:auto}
+.chip{border:1px solid var(--line);border-radius:999px;padding:1px 9px;cursor:pointer;color:var(--dim);font-size:11px;text-transform:none;letter-spacing:0}
+.chip.on{color:var(--ink);border-color:#4a5563}
+#feed{overflow-y:auto;flex:1;padding-right:4px}
+.ev{border-left:2px solid var(--line);padding:5px 9px;margin:6px 0;border-radius:0 6px 6px 0;background:#131820}
+.ev .meta{color:var(--dim);font-size:11px;display:flex;gap:8px}
+.ev.msg{border-color:var(--msg)} .ev.task{border-color:var(--task)} .ev.stage{border-color:var(--ok)} .ev.refused{border-color:var(--bad);background:#1e1416}
+.ev .body{white-space:pre-wrap;margin-top:3px}
+.ev.msg .body{color:#efe3c6}
+.who{color:var(--ink);font-weight:600}
+.arrow{color:var(--dim)}
+.slc{color:var(--dim);cursor:pointer;text-decoration:underline dotted}
+#board{display:grid;gap:6px;overflow-x:auto}
+.col{background:#131820;border:1px solid var(--line);border-radius:8px;min-height:92px;padding:6px}
+.col h3{font-size:10.5px;color:var(--dim);margin:0 0 6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;word-break:break-word}
+.sl{background:#1d242c;border:1px solid #33404d;border-radius:6px;padding:5px 6px;margin-bottom:5px;font-size:11px;cursor:pointer;transition:border-color .3s}
+.sl.sel{border-color:var(--task)}
+.sl.flash{border-color:var(--bad);box-shadow:0 0 0 2px #ef5b5b55}
+.sl .k{color:var(--dim);font-size:10px}
+.grade{font-weight:600} .gA{color:var(--ok)} .gB{color:var(--msg)} .gC{color:var(--dim)}
+#insp{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:14px}
+#insp h4{margin:0 0 5px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px}
+#insp pre{white-space:pre-wrap;margin:0;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:#c9d1db;max-height:260px;overflow:auto;background:#131820;border:1px solid var(--line);border-radius:6px;padding:8px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:12px}
+.kv span:nth-child(odd){color:var(--dim)}
+.muted{color:var(--dim)}
+#ci{margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Nightshift · lab floor</h1>
+  <span class="badge" id="mode">replay</span>
+  <span class="badge">campaign <b id="camp">–</b></span>
+  <span class="badge" style="max-width:520px;overflow:hidden;text-overflow:ellipsis">champion <b id="champ">–</b></span>
+  <div class="controls">
+    <button id="play">Play</button>
+    <select id="speed"><option value="1">1×</option><option value="4" selected>4×</option><option value="16">16×</option><option value="64">64×</option></select>
+    <input type="range" id="scrub" min="0" max="1000" value="0">
+    <span id="clock">0 / 0 events</span>
+    <button id="end">End</button>
+  </div>
+</header>
+<main>
+  <section class="card" id="floorCard">
+    <h2>Lab floor <span class="legend"><span><i style="border-color:var(--msg);border-top-style:dashed"></i>send (question, objection, answer)</span><span><i style="border-color:var(--task)"></i>queue (owned task handed off)</span><span style="color:var(--code)">■ code seat (no LLM)</span></span></h2>
+    <svg id="floor" viewBox="0 0 760 470"></svg>
+  </section>
+  <section class="card" id="feedCard">
+    <h2>Conversation &amp; work log
+      <span class="chips"><span class="chip on" data-k="msg">messages</span><span class="chip on" data-k="task">queue</span><span class="chip on" data-k="stage">workflow</span></span></h2>
+    <div id="feed"></div>
+  </section>
+  <section class="card" id="boardCard">
+    <h2>Workflow board <span class="muted" style="text-transform:none;letter-spacing:0">each card is a slice (one hypothesis); red flash = the rig refused a move</span></h2>
+    <div id="board"></div>
+  </section>
+  <section class="card" id="inspCard">
+    <h2 id="inspTitle">Inspector <span class="muted" style="text-transform:none;letter-spacing:0">click a slice or a seat</span></h2>
+    <div id="insp"></div>
+  </section>
+</main>
+<script>
+const EMBEDDED = /*__RIG_DATA__*/null;
+const LIVE = EMBEDDED === null;
+let S = null, VT = [], cursor = 0, playing = false, speed = 4, sel = null, selSeat = null;
+const filt = {msg: true, task: true, stage: true};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
+const short = a => (a || "").split("@")[0];
+
+const POS = {pi: [380, 62], methodologist: [610, 130], critic: [665, 290], experimenter: [520, 405],
+             statistician: [240, 405], replicator: [95, 290], writer: [150, 130], human: [380, 235]};
+
+function load(state) {
+  const first = !S;
+  S = state;
+  // compress idle gaps (LLM thinking time) so replay stays watchable
+  VT = []; let v = 0;
+  S.events.forEach((e, i) => { if (i) v += Math.min(2.5, Math.max(0.15, e.t - S.events[i - 1].t)); VT.push(v); });
+  S.roleOf = {}; Object.entries(S.seats).forEach(([s, x]) => S.roleOf[s] = x.role);
+  S.campOf = e => { const m = /^C(\d+)-/.exec(e.slice || ""); return m ? +m[1] : null; };
+  if (first) { drawFloorStatic(); buildBoard(); }
+}
+
+function drawFloorStatic() {
+  const svg = $("floor");
+  let h = `<g id="edges"></g>`;
+  const seats = Object.entries(S.seats);
+  for (const [seat, x] of seats) {
+    const [cx, cy] = POS[x.role];
+    const shape = x.kind === "code" ? `<rect x="${cx - 34}" y="${cy - 30}" width="68" height="60" rx="8"/>` : `<circle cx="${cx}" cy="${cy}" r="34"/>`;
+    h += `<g class="node ${x.kind === "code" ? "code" : ""}" id="n-${x.role}" data-seat="${seat}">
+      <circle class="halo" cx="${cx}" cy="${cy}" r="36"/>${shape}
+      <text x="${cx}" y="${cy - 2}">${x.role}</text>
+      <text class="addr" x="${cx}" y="${cy + 12}">${x.kind === "code" ? "code" : x.tier}</text>
+      <text class="doing" id="d-${x.role}" x="${cx}" y="${cy + 50}"></text>
+      <text class="addr" id="c-${x.role}" x="${cx}" y="${cy + 63}"></text></g>`;
+  }
+  h += `<g class="node" id="n-human"><circle cx="${POS.human[0]}" cy="${POS.human[1]}" r="22" style="stroke-dasharray:3 3"/>
+        <text x="${POS.human[0]}" y="${POS.human[1] + 4}">you</text></g>`;
+  svg.innerHTML = h;
+  svg.querySelectorAll(".node[data-seat]").forEach(n => n.onclick = () => { selSeat = n.dataset.seat; sel = null; render(); });
+}
+
+function curve(a, b) {
+  const [x1, y1] = POS[a] || POS.human, [x2, y2] = POS[b] || POS.human;
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, dx = x2 - x1, dy = y2 - y1, k = 0.18;
+  return `M${x1},${y1} Q${mx - dy * k},${my + dx * k} ${x2},${y2}`;
+}
+
+function buildBoard() {
+  const stages = S.stages;
+  $("board").style.gridTemplateColumns = `repeat(${stages.length}, minmax(92px,1fr))`;
+  $("board").innerHTML = stages.map(st => `<div class="col"><h3>${st.replace(/_/g, " ")}</h3><div id="col-${st}"></div></div>`).join("");
+}
+
+function stateAt(n) {
+  const stage = {}, working = {}, sent = {}, recv = {}, flash = {}, grades = {};
+  let camp = null;
+  for (let i = 0; i < n; i++) {
+    const e = S.events[i];
+    const c = S.campOf(e); if (c) camp = c;
+    if (e.kind === "stage") { if (e.ok) stage[e.slice] = e.to; else if (VT[n - 1] - VT[i] < 2.5) flash[e.slice] = true; }
+    if (e.kind === "task") {
+      const r = S.roleOf[e.owner];
+      if (e.event === "claimed") working[r] = `${e.task_kind}${e.slice ? " · " + e.slice.replace(/^C\d+-/, "") : ""}`;
+      if (e.event === "done" || e.event === "parked") delete working[r];
+    }
+    if (e.kind === "msg") { sent[S.roleOf[e.frm]] = (sent[S.roleOf[e.frm]] || 0) + 1; recv[S.roleOf[e.to]] = (recv[S.roleOf[e.to]] || 0) + 1; }
+  }
+  if (n > 0) for (const sl of S.slices) { if (stage[sl.id] === undefined) stage[sl.id] = null; }
+  return {stage, working, sent, recv, flash, camp};
+}
+
+function champAt(camp, done) {
+  let c = "lags 1-4 + 4/13-week rolling means";
+  for (const h of S.champion_history || []) if (camp > h.campaign || (camp === h.campaign && done)) c = h.to.replace("pooled ridge on demand ", "");
+  return c;
+}
+
+function render() {
+  if (!S) return;
+  const n = VT.filter(v => v <= cursor).length;
+  const st = stateAt(n);
+  $("clock").textContent = `${n} / ${S.events.length} events`;
+  $("scrub").value = VT.length ? Math.round(1000 * cursor / (VT[VT.length - 1] || 1)) : 0;
+  $("camp").textContent = st.camp ? `${st.camp} of ${Math.max(1, (S.campaigns || []).length)}` : "–";
+  const campDone = n >= S.events.length || (S.events.slice(n).every(e => S.campOf(e) !== st.camp));
+  $("champ").textContent = champAt(st.camp || 1, campDone);
+  // seats
+  for (const role of Object.keys(POS)) {
+    const node = $("n-" + role); if (!node) continue;
+    node.classList.toggle("working", !!st.working[role]);
+    const d = $("d-" + role); if (d) d.textContent = st.working[role] || "";
+    const c = $("c-" + role); if (c) c.textContent = (st.sent[role] || st.recv[role]) ? `sent ${st.sent[role] || 0} · received ${st.recv[role] || 0}` : "";
+    if (selSeat && S.seats[selSeat] && S.seats[selSeat].role === role) node.querySelector("circle:not(.halo),rect").style.stroke = "#fff";
+    else { const sh = node.querySelector("circle:not(.halo),rect"); if (sh) sh.style.stroke = ""; }
+  }
+  // live edges: recent sends and handoffs
+  let eh = "";
+  for (let i = Math.max(0, n - 40); i < n; i++) {
+    const e = S.events[i], age = cursor - VT[i];
+    if (age > 3.5) continue;
+    const op = Math.max(0.15, 1 - age / 3.5).toFixed(2);
+    if (e.kind === "msg" && filt.msg) eh += `<path class="edge msg" style="opacity:${op}" d="${curve(S.roleOf[e.frm], S.roleOf[e.to])}"/>`;
+    if (e.kind === "task" && e.event === "created" && filt.task)
+      eh += `<path class="edge task" style="opacity:${op}" d="${curve(S.roleOf[e.creator] || "human", S.roleOf[e.owner])}"/>`;
+  }
+  $("edges").innerHTML = eh;
+  // board
+  for (const s of S.stages) $("col-" + s).innerHTML = "";
+  const grades = {};
+  for (const [sid, d] of Object.entries(S.details)) if (d.finding) { const m = /Evidence grade:\*\* ([A-D])/.exec(d.finding); if (m) grades[sid] = m[1]; }
+  for (const sl of S.slices) {
+    const s = st.stage[sl.id]; if (!s) continue;
+    const g = s === "written" && grades[sl.id] ? `<span class="grade g${grades[sl.id]}"> · grade ${grades[sl.id]}</span>` : "";
+    const el = document.createElement("div");
+    el.className = "sl" + (sel === sl.id ? " sel" : "") + (st.flash[sl.id] ? " flash" : "");
+    el.innerHTML = `<div>${esc(sl.id.replace(/^C\d+-S\d-/, ""))}${g}</div><div class="k">${esc(sl.id.match(/^C\d+-S\d/)[0])}</div>`;
+    el.onclick = () => { sel = sl.id; selSeat = null; render(); };
+    const col = $("col-" + s); if (col) col.appendChild(el);
+  }
+  renderFeed(n); renderInspector();
+}
+
+function renderFeed(n) {
+  const feed = $("feed"), atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60;
+  const items = [];
+  for (let i = 0; i < n; i++) {
+    const e = S.events[i];
+    if (!filt[e.kind]) continue;
+    if (sel && e.slice !== sel) continue;
+    if (selSeat && ![e.frm, e.to, e.owner, e.creator, e.seat].includes(selSeat)) continue;
+    const slc = e.slice ? `<span class="slc" data-s="${e.slice}">${e.slice}</span>` : "";
+    if (e.kind === "msg")
+      items.push(`<div class="ev msg"><div class="meta"><span class="who">${short(e.frm)}</span><span class="arrow">→</span><span class="who">${short(e.to)}</span><span>send</span>${slc}</div><div class="body">${esc(e.body)}</div></div>`);
+    else if (e.kind === "task") {
+      if (e.event === "created")
+        items.push(`<div class="ev task"><div class="meta"><span class="who">${short(e.creator)}</span><span class="arrow">→</span><span class="who">${short(e.owner)}</span><span>queue #${e.task}: ${e.task_kind}</span>${slc}</div></div>`);
+      else if (e.event === "parked")
+        items.push(`<div class="ev refused"><div class="meta"><span class="who">${short(e.seat)}</span><span>parked task #${e.task} (${e.task_kind})</span>${slc}</div></div>`);
+    } else
+      items.push(`<div class="ev stage ${e.ok ? "" : "refused"}"><div class="meta"><span class="who">${short(e.seat)}</span><span>${e.ok ? "moved" : "REFUSED"} ${e.frm} → ${e.to}</span>${slc}</div>${e.note ? `<div class="body muted">${esc(e.note)}</div>` : ""}</div>`);
+  }
+  feed.innerHTML = items.slice(-250).join("");
+  feed.querySelectorAll(".slc").forEach(x => x.onclick = () => { sel = x.dataset.s; selSeat = null; render(); });
+  if (atBottom || playing) feed.scrollTop = feed.scrollHeight;
+}
+
+function ciBar(dec, sesoi) {
+  if (!dec) return "";
+  const lo = Math.min(dec.lo, -0.02, -sesoi) , hi = Math.max(dec.hi, 0.04, sesoi * 3), W = 360, H = 40;
+  const x = v => 10 + (W - 20) * (v - lo) / (hi - lo);
+  return `<svg id="ci" viewBox="0 0 ${W} ${H}">
+    <rect x="${x(-sesoi)}" y="6" width="${x(sesoi) - x(-sesoi)}" height="18" fill="#2a3340"/>
+    <line x1="${x(0)}" x2="${x(0)}" y1="2" y2="28" stroke="#8a94a3"/>
+    <line x1="${x(dec.lo)}" x2="${x(dec.hi)}" y1="15" y2="15" stroke="#4ea1ff" stroke-width="3"/>
+    <circle cx="${x(dec.point)}" cy="15" r="5" fill="#4ea1ff"/>
+    <text x="${x(0)}" y="38" fill="#8a94a3" font-size="10" text-anchor="middle">0</text>
+    <text x="${x(sesoi)}" y="38" fill="#8a94a3" font-size="10" text-anchor="middle">+SESOI</text>
+    <text x="${x(dec.point)}" y="4" fill="#d9dee5" font-size="10" text-anchor="middle" dy="0">${(100 * dec.point).toFixed(2)}%</text></svg>
+    <div class="muted" style="font-size:11px">grey band = within ±SESOI (no meaningful effect); blue = estimate and CI at α ${dec.alpha.toFixed(3)}</div>`;
+}
+
+function renderInspector() {
+  const box = $("insp");
+  if (selSeat) {
+    const x = S.seats[selSeat];
+    $("inspTitle").innerHTML = `Seat · ${esc(selSeat)} <span class="muted" style="text-transform:none;letter-spacing:0">${x.kind === "code" ? "deterministic code — no LLM" : "LLM · " + x.tier + " tier"}</span>`;
+    const msgs = S.events.filter(e => e.kind === "msg" && (e.frm === selSeat || e.to === selSeat));
+    box.innerHTML = `<div><h4>Owns</h4><div>${esc(x.owns)}</div></div>
+      <div><h4>Messages</h4><div>${msgs.length} (${msgs.filter(e => e.frm === selSeat).length} sent)</div></div>
+      <div><h4>Tip</h4><div class="muted">The log on the right is now filtered to this seat. Click the seat again elsewhere to change, or a slice card.</div></div>`;
+    return;
+  }
+  if (!sel) { $("inspTitle").innerHTML = `Inspector <span class="muted" style="text-transform:none;letter-spacing:0">click a slice or a seat</span>`;
+    box.innerHTML = `<div><h4>Mission</h4><div>${esc(S.mission)}</div></div>
+      <div><h4>Fixed decision standards</h4><div class="kv">${Object.entries(S.standards).filter(([k]) => !["set_by"].includes(k)).map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join("")}</div></div>
+      <div><h4>Lab lessons carried between campaigns</h4><pre>${esc((S.lessons || []).join("\n\n")) || "(none yet)"}</pre></div>`; return; }
+  const d = S.details[sel] || {};
+  $("inspTitle").innerHTML = `Slice · ${esc(sel)} <span class="muted" style="text-transform:none;letter-spacing:0">${esc((S.slices.find(s => s.id === sel) || {}).title)}</span>`;
+  const pw = (d.power || []).map((p, i) => `rev ${i}: design ${p.design} · P(decisive) ${p.p_decisive?.toFixed?.(2) ?? "–"} · pilot SE ${(100 * (p.pilot_se ?? p.reference_se ?? 0)).toFixed(2)}% · leak ${p.leak_canary ? "FIRED" : "clean"} · controls +${p.positive_control}/placebo ${p.negative_control}`).join("\n");
+  const rv = (d.reviews || []).map((r, i) => `rev ${i}: ${r.verdict}${(r.blocking || []).length ? " — " + r.blocking.join("; ") : ""}`).join("\n\n");
+  box.innerHTML = `<div><h4>Preregistration ${d.locked ? `(locked · ${d.locked.digest.slice(0, 12)})` : "(not locked)"}</h4>
+      <pre>${esc(d.locked ? d.locked.statement : (d.prereg || {}).statement || "")}</pre>
+      <h4 style="margin-top:10px">Design reviews (critic, before data)</h4><pre>${esc(rv) || "–"}</pre></div>
+    <div><h4>Power, leak check and controls (statistician)</h4><pre>${esc(pw) || "–"}</pre>
+      <h4 style="margin-top:10px">Decision (code)</h4>${d.decision ? `<div class="kv"><span>decision</span><span>${d.decision.decision}</span><span>estimate</span><span>${(100 * d.decision.point).toFixed(2)}% [${(100 * d.decision.lo).toFixed(2)}%, ${(100 * d.decision.hi).toFixed(2)}%]</span></div>${ciBar(d.decision, d.decision.sesoi)}` : "<div class='muted'>not run</div>"}
+      ${d.replication ? `<h4 style="margin-top:10px">Replication</h4><div class="kv"><span>decision</span><span>${d.replication.decision}</span><span>re-implemented as</span><span>${esc(d.replication.reimplemented_as)} (${d.replication.same_treatment ? "matched" : "DIFFERED"})</span></div>` : ""}</div>
+    <div><h4>Finding (writer)</h4><pre>${esc(d.finding || "–")}</pre><h4 style="margin-top:10px">Progress log</h4><pre>${esc(d.progress)}</pre></div>`;
+}
+
+// ---- playback
+let last = performance.now();
+function frame(t) {
+  const dt = (t - last) / 1000; last = t;
+  if (playing && VT.length) {
+    cursor = Math.min(VT[VT.length - 1], cursor + dt * speed);
+    if (cursor >= VT[VT.length - 1] && !LIVE) { playing = false; $("play").textContent = "Replay"; }
+    render();
+  }
+  requestAnimationFrame(frame);
+}
+$("play").onclick = () => { if (!playing && VT.length && cursor >= VT[VT.length - 1] && !LIVE) cursor = 0; playing = !playing; $("play").textContent = playing ? "Pause" : "Play"; };
+$("speed").onchange = e => speed = +e.target.value;
+$("scrub").oninput = e => { cursor = (VT[VT.length - 1] || 0) * e.target.value / 1000; render(); };
+$("end").onclick = () => { cursor = VT[VT.length - 1] || 0; render(); };
+document.querySelectorAll(".chip").forEach(c => c.onclick = () => { filt[c.dataset.k] = !filt[c.dataset.k]; c.classList.toggle("on"); render(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { sel = null; selSeat = null; render(); } if (e.key === " ") { e.preventDefault(); $("play").click(); } });
+
+async function poll() {
+  const r = await fetch("/api/state"); const st = await r.json();
+  const follow = !S || cursor >= (VT[VT.length - 1] || 0) - 0.01;
+  const nOld = S ? S.events.length : 0;
+  load(st);
+  if (follow) cursor = VT[VT.length - 1] || 0;
+  if (st.events.length !== nOld) render();
+  setTimeout(poll, 2000);
+}
+if (LIVE) { $("mode").textContent = "live"; $("mode").style.color = "var(--ok)"; poll(); }
+else { load(EMBEDDED); cursor = 0; render(); }
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

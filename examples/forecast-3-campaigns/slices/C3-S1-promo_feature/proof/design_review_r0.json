@@ -1,0 +1,6 @@
+{
+ "verdict": "approve",
+ "blocking": [],
+ "message": "Comparator is explicit and matched (identical ridge model, promo=false vs promo=true), the statement is falsifiable and estimand-consistent (two-way series x origin bootstrap mean difference in relative WAPE), kills_if is concrete and pre-specifies the CI/point-estimate conditions for rejection, and SESOI/target/alpha are per fixed lab standard. The treatment is explicitly scoped as known-in-advance promotion-week count in the forecast window, so no look-ahead leakage in the stated design; this presumes the promo calendar used for backtesting reflects information actually available at each rolling origin (not realized/ex-post promotion data) \u2014 flag this as an implementation-fidelity check for the analyst, not a design objection. Design B vs A tradeoff is justified on bootstrap-precision grounds for the fixed target effect/SESOI/alpha. No blocking issues.",
+ "new_hypothesis_for_pi": null
+}

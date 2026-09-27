@@ -1,0 +1,6 @@
+{
+ "verdict": "approve",
+ "blocking": [],
+ "message": "Comparator is explicit and minimal (identical pooled-ridge config, yoy=true vs yoy=false, no incidental changes to lags/window/transform). Statement is falsifiable and matches the estimand (relative WAPE reduction on next-4-week sums, two-way series x origin bootstrap). kills_if is concrete and appropriately two-part (statistical: one-sided 97.5% LCB > 0; practical: point estimate >= 1.0% SESOI), with the negative-point-estimate clause redundant but harmless. No leakage: the yoy feature references demand ~52 weeks prior to the forecast window, which is strictly historical relative to every rolling origin in weeks 110-234 given the 260-week history, so it is known at forecast time. Design B's justification over A is qualitative (no explicit power simulation/SE estimate cited) -- worth tightening in a future revision, but not blocking for this stage-1 submission. No changes required.",
+ "new_hypothesis_for_pi": null
+}

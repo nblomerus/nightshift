@@ -1,0 +1,5 @@
+{
+ "implementable_exactly": false,
+ "mismatch": "Statement claims comparator has no YoY feature; config shows comparator.yoy=true. Statement claims treatment uses naive inverse transform with no bias corrections; config does not specify a transform method (naive vs. bias-corrected). Statement specifies pooled ridge on raw demand for comparator; config does not document what 'pooled ridge' means or confirm identical architecture between arms.",
+ "message": "The statement undersells the comparator \u2014 it says 'no YoY feature' but the frozen judge will include last year's 4-week demand in both arms. This is a material difference: the comparator is stronger than claimed, which weakens the treatment's relative advantage. Clarify whether the statement should say the comparator INCLUDES YoY (making the treatment's log transform the only differing element), or whether the config should have yoy=false for the comparator. Also confirm that 'naive inverse transform' (exp(\u0177) \u2212 1 with no adjustment) is what the treatment will execute, and that 'pooled ridge' is defined somewhere external to this statement."
+}

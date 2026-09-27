@@ -1,0 +1,5 @@
+{
+ "implementable_exactly": false,
+ "mismatch": "Statement excludes yoy feature; config includes yoy=true in both treatment and comparator",
+ "message": "The prereg statement explicitly lists '(no yoy, promo, trend, category, clip, window, or series_mean features)' as a constraint on the pooled ridge model. The frozen judge config includes yoy=true in both treatment and comparator arms. The statement claims the comparator is 'identical model trained on raw demand' with the same feature exclusions; the config contradicts this by adding yoy to both arms. Clarify whether yoy should be present (align statement to config) or absent (align config to statement) before locking."
+}

@@ -1,0 +1,5 @@
+{
+ "implementable_exactly": false,
+ "mismatch": "Statement specifies yoy=false in BOTH arms; config specifies yoy=true in BOTH arms. Statement comparator explicitly requires 'yoy remains false in the comparator, not true' \u2014 direct contradiction.",
+ "message": "The preregistration statement and machine config are locked on incompatible yoy settings. The statement's comparator arm requires yoy=false; the config supplies yoy=true for comparator. Resolve before freezing: either update the statement to yoy=true in both arms, or update the config to yoy=false in both arms. The treatment arm (promo=true vs promo=false difference) is otherwise congruent."
+}

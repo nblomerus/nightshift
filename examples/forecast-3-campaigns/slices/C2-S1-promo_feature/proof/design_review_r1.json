@@ -1,0 +1,6 @@
+{
+ "verdict": "approve",
+ "blocking": [],
+ "message": "No blocking issues. Comparator is explicit and held identical apart from the promo-count feature (yoy/log/trend/cat off in both arms), the statement's relative-WAPE-reduction estimand matches the kills_if bootstrap test at the fixed alpha=0.025/SESOI=0.01, and the feature is specified as known-in-advance (a planned promo calendar), so no forecast-time leakage on its face. Design B's origin count is adequately justified against A/C for this effect size. Approved as written.",
+ "new_hypothesis_for_pi": null
+}

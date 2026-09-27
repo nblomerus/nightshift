@@ -1,0 +1,13 @@
+- [20:43:32] system: slice created: Model log(1+demand) instead of raw demand
+- [20:43:32] pi@forecast-lab: question -> hypothesis (Second-ranked exploratory effect, already has pilot data at two designs (SE 1.27%/1.00%, effect ~+2.6% both). Design C o)
+- [20:44:17] methodologist@forecast-lab: hypothesis -> prereg_draft
+- [20:44:17] methodologist@forecast-lab: prereg_draft -> design_review (rev 0, design B)
+- [20:45:59] critic@forecast-lab: design_review -> approved_design (Comparator (raw-demand ridge, alpha=1.0, lags 1-4 + 4/13-week rolling means, no yoy/promo/trend/category/clip/window/ser)
+- [20:46:03] experimenter@forecast-lab: approved_design -> prereg_draft (not implementable as written: Comparator specification conflict: statement claims 'identical model trained on raw demand' (no yoy )
+- [20:47:13] methodologist@forecast-lab: prereg_draft -> design_review (rev 1, design B)
+- [20:48:25] critic@forecast-lab: design_review -> approved_design (Comparator and treatment are symmetric and fully specified (same lags [1-4], same 4/13-week rolling means, same absence )
+- [20:48:32] experimenter@forecast-lab: approved_design -> prereg_draft (not implementable as written: Comparator specification differs. Statement specifies comparator trained on raw demand WITHOUT yoy f)
+- [20:49:16] methodologist@forecast-lab: prereg_draft -> design_review (rev 2, design B)
+- [20:49:55] critic@forecast-lab: design_review -> approved_design (No blocking issues. The statement is explicit and symmetric: both treatment (log target, naive expm1 inverse) and compar)
+- [20:50:00] experimenter@forecast-lab: approved_design -> prereg_draft (not implementable as written: Statement excludes yoy feature; config includes yoy=true in both treatment and comparator)
+- [20:50:00] methodologist@forecast-lab: prereg_draft -> parked (revision cap reached)

@@ -1,0 +1,12 @@
+- [20:50:20] system: slice created: Model log(1+demand) instead of raw demand
+- [20:50:20] pi@forecast-lab: question -> hypothesis (Second-ranked screen result (+0.75%), with tighter pilot SE under design C (1.00% vs 1.27% for design B) — use design C.)
+- [20:51:07] methodologist@forecast-lab: hypothesis -> prereg_draft
+- [20:51:07] methodologist@forecast-lab: prereg_draft -> design_review (rev 0, design B)
+- [20:52:16] critic@forecast-lab: design_review -> prereg_draft (design objections: The third kills_if clause ('log-transform treatment shows systematic degradation on low-volume/intermittent series consistent with naive inverse-trans)
+- [20:52:37] methodologist@forecast-lab: prereg_draft -> design_review (rev 1, design B)
+- [20:53:00] critic@forecast-lab: design_review -> approved_design (Comparator is explicit and matches the estimand (identical pooled ridge, same lag/rolling-mean features, alpha=1.0, only)
+- [20:53:04] experimenter@forecast-lab: approved_design -> prereg_draft (not implementable as written: Statement claims 'no YoY' (treatment); config sets yoy=true for both arms. Statement specifies 'naiv)
+- [20:53:51] methodologist@forecast-lab: prereg_draft -> design_review (rev 2, design B)
+- [20:54:41] critic@forecast-lab: design_review -> approved_design (Comparator and treatment are both explicit and share the identical raw feature set (lags 1-4, rolls 4/13, yoy=false, no )
+- [20:54:47] experimenter@forecast-lab: approved_design -> prereg_draft (not implementable as written: Statement claims comparator has no YoY feature; config shows comparator.yoy=true. Statement claims t)
+- [20:54:47] methodologist@forecast-lab: prereg_draft -> parked (revision cap reached)

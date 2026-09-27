@@ -1,0 +1,12 @@
+- [20:43:32] system: slice created: Add the known-in-advance count of promotion weeks in the forecast window
+- [20:43:32] pi@forecast-lab: question -> hypothesis (Top exploratory effect (+1.76%) with a plausible causal mechanism (known-in-advance promo weeks reduce demand uncertaint)
+- [20:43:54] methodologist@forecast-lab: hypothesis -> prereg_draft
+- [20:43:54] methodologist@forecast-lab: prereg_draft -> design_review (rev 0, design B)
+- [20:45:11] critic@forecast-lab: design_review -> prereg_draft (design objections: kills_if is internally contradictory: it says the result is killed if the CI 'includes 0 or excludes values >=1.0%', but the parenthetical clarifies t)
+- [20:46:14] methodologist@forecast-lab: prereg_draft -> design_review (rev 1, design B)
+- [20:47:53] critic@forecast-lab: design_review -> approved_design (No blocking issues. Comparator is explicit and held identical apart from the promo-count feature (yoy/log/trend/cat off )
+- [20:48:29] experimenter@forecast-lab: approved_design -> prereg_draft (not implementable as written: Statement specifies 'naive inverse transform, no bias correction' as part of treatment definition; c)
+- [20:48:56] methodologist@forecast-lab: prereg_draft -> design_review (rev 2, design B)
+- [20:49:26] critic@forecast-lab: design_review -> approved_design (Comparator is explicit (promo=true vs promo=false, all else fixed), the estimand matches the design (Design B, two-way b)
+- [20:49:58] experimenter@forecast-lab: approved_design -> prereg_draft (not implementable as written: Statement specifies yoy=false in BOTH arms; config specifies yoy=true in BOTH arms. Statement compar)
+- [20:50:00] methodologist@forecast-lab: prereg_draft -> parked (revision cap reached)
