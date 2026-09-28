@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from agents.common import DESIGNS, ask_json, persona
+from agents.common import ask_json, persona
 
 
 # ---------------------------------------------------------------------------- critic
@@ -17,7 +17,7 @@ def critic_review(rig, seat, task, ctx):
         rig.spec["seats"][seat],
         persona(rig, seat, "You review designs BEFORE any data exists. You never see results."),
         f"Preregistration draft (comparator: {ctx['champion_desc']}; designs: "
-        f"{json.dumps({k: v['desc'] for k, v in DESIGNS.items()})}):\n{json.dumps(pre, indent=1)}\n\n"
+        f"{json.dumps({k: v['desc'] for k, v in ctx['judge'].DESIGNS.items()})}):\n{json.dumps(pre, indent=1)}\n\n"
         "Check: is the comparator explicit; is the statement falsifiable and does it match the estimand; is the "
         "SESOI justified for a demand-planning decision; is kills_if concrete; any leakage or confound risk "
         "(features must be known at forecast time)? Object only to BLOCKING problems."

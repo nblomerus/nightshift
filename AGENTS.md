@@ -21,7 +21,7 @@ decides what counts. Your job is to build the roadmap in [ROADMAP.md](ROADMAP.md
 7. **Exploration never changes a claim's status.** The explorer screen ranks candidates only.
 8. **Champion changes only on a replicated grade-A result** tested against the *current* champion
    (`agents/statistician/handler.py::promote_champion`).
-9. **Pilot / exploration / confirmation / replication data never overlap** (separate seeds; see `agents/common.py`).
+9. **Pilot / exploration / confirmation / replication data never overlap** (separate seeds or disjoint target months; see the judge's `data_keys`).
 
 If a task seems to require breaking an invariant, stop and write the conflict into the PR description instead.
 
@@ -32,7 +32,8 @@ If a task seems to require breaking an invariant, stop and write the conflict in
 | `judges/forecast.py` | frozen synthetic forecasting judge (rolling origins, PIT replay, leak canary) | no (add new judges beside it) |
 | `state/rig.py` | SQLite store: messages, tasks, slices, guards, proof files | yes, keep semantics |
 | `rigs/forecast-lab.json` | seats, workflow edges + guards, decision standards | yes (it is the lab's constitution — explain changes) |
-| `agents/<seat>/handler.py` | one package per seat; `agents/common.py` shared menu/designs/helpers | yes |
+| `judges/forecast_lab.py` | lab adapter for the synthetic judge: baseline, menu, designs, controls, data keys | yes (it is locked into the judge digest) |
+| `agents/<seat>/handler.py` | one package per seat; `agents/common.py` shared helpers; the domain comes from `ctx["judge"]` | yes |
 | `harness/daemon.py` | campaign loop (explore → plan → slices → promote → learn) | yes |
 | `harness/llm.py`, `harness/fake_llm.py` | OpenAI-compatible client; deterministic offline stand-in | yes |
 | `api/floor.py`, `web/floor.html` | lab-floor backend and page | yes |
@@ -55,9 +56,11 @@ If a task seems to require breaking an invariant, stop and write the conflict in
 - **Add a seat:** add it to the rigspec (`role`, `kind` = `llm`|`code`, `tier`, `owns`); create
   `agents/<role>/handler.py`; register task kinds in `agents/__init__.py::HANDLERS`; give it a position in
   `web/floor.html` (`POS`); add a fake reply in `harness/fake_llm.py`.
-- **Add a judge (new domain / real data):** new module in `judges/` exposing the same contract as `forecast.py`
-  (`make_panel`/loader, `evaluate(panel, config, origins, cache, pit)` → unit-level `abs_err`/`actual`,
-  `leak_canary`); reference it from the rigspec; add PIT-equivalence and leak-canary tests.
+- **Add a judge (new domain / real data):** a module in `judges/` exposing the lab contract documented in
+  `judges/forecast_lab.py` (`agents/common.py::JUDGE_API`: baseline, menu, designs, controls, `FILES`,
+  `data_keys`, `evaluate` → unit-level `abs_err[unit, origin]`, `leak_canary`); name it in the rigspec's `judge`
+  field; add PIT-equivalence and leak-canary tests. `load_judge` refuses a rigspec whose judge is missing or
+  incomplete.
 
 ## 5. Definition of done (every PR)
 - [ ] Invariants in §1 still hold (say which ones the change touches).

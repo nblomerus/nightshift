@@ -8,21 +8,13 @@ import numpy as np
 from scipy.stats import norm
 
 from agents.common import (
-    DESIGNS,
-    MENU,
-    PILOT_SEEDS,
-    PLACEBO,
-    POSITIVE_CONTROL,
     REPLICATION_CAP,
     audit_locked,
     describe_config,
-    evaluate_arm,
     judge_digest,
     require_judge,
     slice_grade,
-    slice_seed,
 )
-from judges import forecast as fh
 from science import kernel as sk
 from state.rig import GuardError
 
@@ -42,8 +34,8 @@ def promote_champion(rig, ctx):
         return None
     best = max(wins, key=lambda e: e["point"])
     before = ctx["champion_desc"]
-    ctx["champion"] = dict(ctx["champion"], **MENU[best["key"]][1])
-    ctx["champion_desc"] = describe_config(ctx["champion"])
+    ctx["champion"] = dict(ctx["champion"], **ctx["judge"].MENU[best["key"]][1])
+    ctx["champion_desc"] = describe_config(ctx["judge"], ctx["champion"])
     ctx["champion_history"].append(
         dict(
             campaign=ctx["campaign"], promoted=best["key"], evidence=best["slice"], from_=before, to=ctx["champion_desc"]
@@ -76,7 +68,7 @@ def schedule_replications(rig, ctx):
         if rig.stage(sid) != "written":
             continue
         n = len(rig.read_proof(sid, "replications.json") or [])
-        seed = slice_seed("extra_replication", ctx["campaign"], len(queued))
+        seed = ctx["judge"].data_keys("extra_replication", ctx["campaign"], len(queued))[0]
         try:
             rig.advance(
                 seat,
@@ -96,14 +88,15 @@ def schedule_replications(rig, ctx):
 def statistician_power_controls(rig, seat, task, ctx):
     sid = task["slice"]
     pre = rig.read_proof(sid, "prereg_draft.json")
-    rng, cache = np.random.default_rng(0), ctx["cache"]
+    rng, cache, J = np.random.default_rng(0), ctx["cache"], ctx["judge"]
     ses, pts = [], []
-    treat = dict(ctx["champion"], **MENU[pre["treatment_key"]][1])
-    for s in PILOT_SEEDS:
+    treat = dict(ctx["champion"], **J.MENU[pre["treatment_key"]][1])
+    pilot = J.data_keys("pilot")
+    for s in pilot:
         # pilot panels are never reused for confirmation; they only plan the design
         e = sk.paired_effect(
-            evaluate_arm(treat, pre["design"], s, cache)["abs_err"],
-            evaluate_arm(ctx["champion"], pre["design"], s, cache)["abs_err"],
+            J.evaluate(treat, pre["design"], s, cache)["abs_err"],
+            J.evaluate(ctx["champion"], pre["design"], s, cache)["abs_err"],
             0.05,
             500,
             rng,
@@ -120,10 +113,7 @@ def statistician_power_controls(rig, seat, task, ctx):
     w = pre["sesoi"] - z * se
     d_null = max(0.0, norm.cdf((w - mu) / se) - norm.cdf((-w - mu) / se)) if w > 0 else 0.0
     p_decisive = float(min(1.0, d_sup + d_harm + d_null))
-    panel0 = cache.setdefault(
-        ("panel", PILOT_SEEDS[0], pre["design"]), fh.make_panel(PILOT_SEEDS[0], T=DESIGNS[pre["design"]]["T"])
-    )
-    leak = fh.leak_canary(panel0, treat, origin=DESIGNS[pre["design"]]["origins"][0])
+    leak = J.leak_canary(treat, pre["design"], pilot[0], cache)
 
     def mk(t):
         return sk.Preregistration(
@@ -131,7 +121,7 @@ def statistician_power_controls(rig, seat, task, ctx):
             statement="control",
             estimand="rel WAPE reduction",
             treatment=t,
-            comparator=fh.BASELINE,
+            comparator=J.BASELINE,
             primary_metric="WAPE",
             unit="series",
             sesoi=pre["sesoi"],
@@ -140,10 +130,10 @@ def statistician_power_controls(rig, seat, task, ctx):
         ).lock()
 
     def run(g):
-        return evaluate_arm(g, pre["design"], PILOT_SEEDS[0], cache)
+        return J.evaluate(g, pre["design"], pilot[0], cache)
 
-    pos = sk.run_test(mk(POSITIVE_CONTROL), run, rng)["decision"]
-    neg = sk.run_test(mk(PLACEBO), run, rng)["decision"]
+    pos = sk.run_test(mk(J.POSITIVE_CONTROL), run, rng)["decision"]
+    neg = sk.run_test(mk(J.PLACEBO), run, rng)["decision"]
     admissible = pos == "supported" and neg != "supported" and not leak
     rep = dict(
         design=pre["design"],
@@ -181,7 +171,7 @@ def statistician_power_controls(rig, seat, task, ctx):
                 "controls_passed",
                 checks={"p_decisive>=0.8": p_decisive >= 0.8, "controls_admissible": admissible},
             )
-        order = list(DESIGNS)
+        order = list(J.DESIGNS)
         larger = order[order.index(pre["design"]) + 1 :]
         base = (
             f"Design {pre['design']}: probability of a decisive result {p_decisive:.2f} at the pilot effect "
@@ -212,12 +202,12 @@ def statistician_power_controls(rig, seat, task, ctx):
         checks={"p_decisive>=0.8": True, "controls_admissible": True},
         note=f"P(decisive) {p_decisive:.2f} at pilot effect {mu:+.2%}; leak canary clean",
     )
-    d = DESIGNS[pre["design"]]
+    d = J.DESIGNS[pre["design"]]
     locked = sk.Preregistration(
         hid=pre["hid"],
         statement=pre["statement"],
         estimand="relative WAPE reduction, next-4-week sum, two-way bootstrap",
-        treatment=dict(ctx["champion"], **MENU[pre["treatment_key"]][1]),
+        treatment=dict(ctx["champion"], **J.MENU[pre["treatment_key"]][1]),
         comparator=dict(ctx["champion"]),
         primary_metric="WAPE",
         unit="series x origin",
@@ -226,7 +216,7 @@ def statistician_power_controls(rig, seat, task, ctx):
         n_boot=1000,
         design=dict(name=pre["design"], T=d["T"], origins=d["origins"], bootstrap="two_way"),
         kills_if=pre["kills_if"],
-        judge_digest=judge_digest(),
+        judge_digest=judge_digest(J),
     ).lock()
     rig.proof(sid, "prereg_locked.json", dict(body=locked._body(), digest=locked.digest, locked_at=locked.locked_at))
     ctx["locked"][sid] = locked
@@ -239,7 +229,7 @@ def statistician_analyse(rig, seat, task, ctx):
     sid = task["slice"]
     pre, res = ctx["locked"][sid], rig.read_proof(sid, "run_result.json")
     audit_locked(rig, sid, pre, seat, "analysis")
-    judge = require_judge(rig, seat, sid, pre, "analysed", {"kernel_decision": False})
+    judge = require_judge(rig, seat, sid, pre, "analysed", {"kernel_decision": False}, ctx["judge"])
     rng = np.random.default_rng(1)
     alpha = pre.alpha  # reserved at lock (campaign Bonferroni)
     est = sk.paired_effect(np.array(res["err_t"]), np.array(res["err_c"]), alpha, pre.n_boot, rng)

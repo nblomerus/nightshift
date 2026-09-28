@@ -9,6 +9,8 @@ import agents
 import agents.common as common
 from harness.daemon import run
 from harness.fake_llm import fake_llm
+from judges import forecast as fh
+from judges import forecast_lab
 
 SLICE = "C1-S1-last_year_window"
 
@@ -17,8 +19,8 @@ SLICE = "C1-S1-last_year_window"
 def judge_copy(tmp_path, monkeypatch):
     """Point the digest at a copy of the judge, so a test can edit it without touching judges/."""
     path = tmp_path / "forecast.py"
-    shutil.copy(common.JUDGE_PATH, path)
-    monkeypatch.setattr(common, "JUDGE_PATH", str(path))
+    shutil.copy(fh.__file__, path)
+    monkeypatch.setattr(forecast_lab, "FILES", (str(path), forecast_lab.__file__))
     return path
 
 
@@ -58,7 +60,7 @@ def test_judge_edited_between_run_and_analysis_is_refused(tmp_path, monkeypatch,
 
 def test_judge_digest_is_locked_and_stamped_on_every_result(tmp_path):
     rig, ctx, _ = run(fake_llm, root=str(tmp_path / "run"), n_campaigns=1)
-    digest = common.judge_digest()
+    digest = common.judge_digest(forecast_lab)
     assert ctx["locked"] and all(pre.judge_digest == digest for pre in ctx["locked"].values())
     for sid in ctx["locked"]:
         assert rig.read_proof(sid, "prereg_locked.json")["body"]["judge_digest"] == digest

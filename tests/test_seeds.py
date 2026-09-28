@@ -2,7 +2,7 @@
 
 import pytest
 
-from agents.common import EXPLORATION_SEEDS, PILOT_SEEDS, SEED_PURPOSES, slice_seed
+from judges.forecast_lab import EXPLORATION_SEEDS, PILOT_SEEDS, SEED_PURPOSES, slice_seed
 
 
 def test_no_seed_is_used_for_two_purposes_or_two_slices():

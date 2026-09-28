@@ -20,9 +20,10 @@ def load_rigspec(path: str | None = None) -> dict:
     return json.loads(Path(path or DEFAULT_RIGSPEC).read_text())
 
 
-def make_ctx(llm):
+def make_ctx(llm, judge):
     return dict(
         llm=llm,
+        judge=judge,
         cache={},
         locked={},
         ledger_rows=[],
@@ -30,8 +31,8 @@ def make_ctx(llm):
         pi_next=None,
         primary_seed={},
         replication_seed={},
-        champion=dict(S.fh.BASELINE),
-        champion_desc=S.describe_config(S.fh.BASELINE),
+        champion=dict(judge.BASELINE),
+        champion_desc=S.describe_config(judge, judge.BASELINE),
         evidence=[],
         lessons=[],
         variance_book={},
@@ -134,10 +135,11 @@ def run(llm, root="runs/latest", max_ticks=40, n_campaigns=3, rigspec: str | Non
     """The outer feedback loop. Each campaign: explore (cheap, exploratory) -> PI plans from the
     evidence ledger + lessons -> slices run the preregistered workflow -> champion is promoted only on
     a replicated result -> lessons and variance estimates carry into the next campaign."""
+    spec = load_rigspec(rigspec)
+    judge = S.load_judge(spec)  # refuse a missing judge before anything is written
     if os.path.exists(root):
         shutil.rmtree(root)
-    spec = load_rigspec(rigspec)
-    rig, ctx, transcript = Rig(root, spec), make_ctx(llm), []
+    rig, ctx, transcript = Rig(root, spec), make_ctx(llm, judge), []
     Path(root, "rigspec.json").write_text(json.dumps(spec, indent=1))  # the dashboard reads this copy
     ctx["n_campaigns"] = n_campaigns
     for k in range(1, n_campaigns + 1):

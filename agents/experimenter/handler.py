@@ -5,10 +5,8 @@ from __future__ import annotations
 import json
 
 from agents.common import (
-    MENU,
     ask_json,
     audit_locked,
-    evaluate_arm,
     persona,
     prereg_statement,
     require_judge,
@@ -18,15 +16,15 @@ from agents.common import (
 # ---------------------------------------------------------------------------- experimenter
 def experimenter_run(rig, seat, task, ctx):
     sid = task["slice"]
-    pre = ctx["locked"][sid]
+    pre, J = ctx["locked"][sid], ctx["judge"]
     audit_locked(rig, sid, pre, seat, "run")
-    judge = require_judge(rig, seat, sid, pre, "run", {"digest_matches": pre.verify(), "judge_result": False})
+    judge = require_judge(rig, seat, sid, pre, "run", {"digest_matches": pre.verify(), "judge_result": False}, J)
     for m in rig.inbox(seat):
         rig.note(seat, f"answer from {m['frm']}: {m['body'][:200]}")
     out = dict(run_note="ran treatment and comparator under the frozen judge as locked")
     seed = ctx["primary_seed"][sid]
     d = pre.design["name"]
-    t, c = evaluate_arm(pre.treatment, d, seed, ctx["cache"]), evaluate_arm(pre.comparator, d, seed, ctx["cache"])
+    t, c = J.evaluate(pre.treatment, d, seed, ctx["cache"]), J.evaluate(pre.comparator, d, seed, ctx["cache"])
     rig.proof(
         sid,
         "run_result.json",
@@ -53,8 +51,8 @@ def experimenter_run(rig, seat, task, ctx):
 def experimenter_check(rig, seat, task, ctx):
     """Before lock: can the prereg be implemented EXACTLY by the frozen judge's treatment?"""
     sid = task["slice"]
-    pre = rig.read_proof(sid, "prereg_draft.json")
-    impl = MENU[pre["treatment_key"]][0]
+    pre, J = rig.read_proof(sid, "prereg_draft.json"), ctx["judge"]
+    impl = J.MENU[pre["treatment_key"]][0]
     out = ask_json(
         ctx["llm"],
         rig.spec["seats"][seat],
@@ -62,14 +60,14 @@ def experimenter_check(rig, seat, task, ctx):
         f"Draft prereg statement:\n{pre['statement']}\n\nThe frozen judge will run exactly this treatment: "
         f"'{impl}' (naive inverse transforms, no bias corrections), against {ctx['champion_desc']}.\n"
         f"Authoritative machine config, locked together with the statement: treatment="
-        f"{json.dumps(dict(ctx['champion'], **MENU[pre['treatment_key']][1]))}, comparator={json.dumps(ctx['champion'])}.\n"
+        f"{json.dumps(dict(ctx['champion'], **J.MENU[pre['treatment_key']][1]))}, comparator={json.dumps(ctx['champion'])}.\n"
         "Question: does the statement CONTRADICT this config, or claim a component the config does not "
         "contain (e.g. a correction, extra feature, different comparator)? Missing detail is NOT a mismatch "
         "— the config supplies it. "
         'Reply JSON: {"implementable_exactly": true/false, "mismatch": "...", "message": "to the methodologist"}',
     )
     # deterministic: the statement must be the one generated from the CURRENT champion config and standards
-    expected = prereg_statement(ctx["champion"], pre["treatment_key"], rig.spec["decision_standards"], pre["alpha"])
+    expected = prereg_statement(J, ctx["champion"], pre["treatment_key"], rig.spec["decision_standards"], pre["alpha"])
     out["statement_from_config"] = pre["statement"] == expected
     if not out["statement_from_config"]:
         out["mismatch"] = "statement is not the one generated from the current champion config; regenerate it"
