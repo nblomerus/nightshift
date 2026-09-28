@@ -62,10 +62,17 @@ Items 1–4 close gaps found in real-model runs; 5–8 extend the lab; 9–10 ar
   (fast bank) and fails if FDR > 10 % or coverage < 85 %.
 - **Acceptance:** CI job `calibration-smoke` green; dashboard shows "lab FDR / power / coverage".
 
-## 8. A real-data judge
-- **What:** `judges/demand.py` with the same contract, reading point-in-time snapshots (Parquet/CSV) of SKU×DC weekly
-  demand, promotions and prices; PIT replay and leak canary as in `forecast.py`; rigspec `rigs/demand-lab.json`.
-- **Acceptance:** PIT-equivalence and canary tests on a small fixture dataset committed under `tests/fixtures/`.
+## 8. A real-data judge: bike-share station demand with prospective forecasts
+- **Why:** the synthetic judge cannot show the lab works on real data. Bike-share demand is censored by empty
+  stations (the stockout problem), has real hypotheses, and allows a monthly prospective test: forecasts locked
+  with a hash and a public timestamp before their month begins, scored when the operator publishes the data.
+- **What:** full spec in [docs/specs/bikeshare.md](docs/specs/bikeshare.md). Six PRs, in order:
+  8a GBFS availability collector (first: availability history only accrues from the day it starts);
+  8b domain-pluggable lab (judge named in the rigspec; data roles instead of seeds);
+  8c trip ingest + `judges/bikeshare.py` + `rigs/bikeshare-lab.json`;
+  8d censoring mask; 8e monthly prospective lock and score; 8f foundation-model challenger (optional).
+- **Acceptance:** per sub-item in the spec. Tests run on a synthetic fixture in the operator's schema; real data
+  stays under the gitignored `data/` (the licence forbids redistributing it).
 
 ## 9. Lab floor upgrades (optional)
 - Server-sent events instead of 2 s polling; per-seat transcript (prompts/replies from `llm_calls.json`); campaign
