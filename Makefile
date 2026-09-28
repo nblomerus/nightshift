@@ -19,6 +19,8 @@ TARGET
     collect                    Poll bike-share GBFS availability every 5 min into data/gbfs (SYSTEM=chi|bkn)
     ingest                     Download and aggregate bike-share trip months into data/bikeshare (SYSTEM=chi|bkn)
     censor                     Reduce collected GBFS snapshots to the station-day censoring table (SYSTEM=chi|bkn)
+    lock-month                 Lock champion + baseline forecasts for month L+2 (SYSTEM, RUN or CHAMPION=k1,k2)
+    score-month                Score a locked month once published (SYSTEM, MONTH=yyyymm)
     clean                      Remove caches and __pycache__ dirs
 
 See README.md for setup.
@@ -75,7 +77,7 @@ install:
 pre-commit:
 	pre-commit install
 
-.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols collect ingest censor clean
+.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols collect ingest censor lock-month score-month clean
 
 # Non-mutating lint + format check — mirrors the CI `lint` job. Use `make ruff` to autofix.
 check:
@@ -116,6 +118,12 @@ protocols:
 
 ingest:
 	$(VENV_PYTHON) -m ops.bikeshare_ingest --system $(SYSTEM)
+
+lock-month:
+	$(VENV_PYTHON) -m ops.prospective lock --system $(SYSTEM) $(if $(CHAMPION),--champion $(CHAMPION),--run $(RUN))
+
+score-month:
+	$(VENV_PYTHON) -m ops.prospective score --system $(SYSTEM) --month $(MONTH)
 
 censor:
 	$(VENV_PYTHON) -m ops.gbfs_reduce --system $(SYSTEM)

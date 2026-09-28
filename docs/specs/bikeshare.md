@@ -179,6 +179,11 @@ One poll of Divvy is about 2,000 rows and 23 KB gzipped: about 0.6 M rows and 7 
 - **Acceptance:** a lock → edit forecast → score sequence is refused; a lock dated inside the target month is
   refused; scoring the fixture reproduces a hand-computed WAPE.
 
+**Built (8e):** `make ingest censor lock-month SYSTEM=chi RUN=runs/latest` as soon as month L is published, then
+commit and push `forecasts/chi/<L+2>/`. `make ingest censor score-month SYSTEM=chi MONTH=<L+2>` once L+2 is
+published writes `scores/chi/<L+2>.json`. The lock's `created_at` is checked against UTC midnight on the first of
+the month, which is earlier than midnight in any US time zone.
+
 ### 8f. Foundation-model challenger (optional)
 - A zero-shot pretrained time-series model as a MENU treatment, behind an optional dependency group, run in the
   item-5 sandbox once that exists.
