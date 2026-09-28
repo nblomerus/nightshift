@@ -53,7 +53,8 @@ C inconclusive/deviated · D failed controls.
 5. Ledger, lessons and variance book are written (`ledger.json`) and feed the next campaign.
 
 ## Data separation (agents/common.py)
-Pilot seeds (power only) · exploration seeds (screen only) · primary seed per slice · replication seed per slice · extra-replication seeds (90000+).
+Pilot seeds (power only) · exploration seeds (screen only) · primary seed per slice · replication seed per slice · extra-replication seeds; per-slice seeds come from
+`slice_seed(purpose, campaign, slot)`, one block of a million per purpose.
 Never reuse one for another purpose.
 
 ## Lab floor (api/floor.py + web/floor.html)

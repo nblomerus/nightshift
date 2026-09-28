@@ -9,7 +9,6 @@ from scipy.stats import norm
 
 from agents.common import (
     DESIGNS,
-    EXTRA_REPLICATION_SEED0,
     MENU,
     PILOT_SEEDS,
     PLACEBO,
@@ -18,6 +17,7 @@ from agents.common import (
     describe_config,
     evaluate_arm,
     slice_grade,
+    slice_seed,
 )
 from judges import forecast as fh
 from science import kernel as sk
@@ -73,7 +73,7 @@ def schedule_replications(rig, ctx):
         if rig.stage(sid) != "written":
             continue
         n = len(rig.read_proof(sid, "replications.json") or [])
-        seed = EXTRA_REPLICATION_SEED0 + 100 * ctx["campaign"] + len(queued)
+        seed = slice_seed("extra_replication", ctx["campaign"], len(queued))
         try:
             rig.advance(
                 seat,
