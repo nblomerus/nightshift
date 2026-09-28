@@ -10,7 +10,11 @@ def pi_plan(rig, seat, task, ctx):
     """Plan campaign k from everything the lab knows: champion, exploratory screen, evidence ledger,
     lessons, critic suggestions. Re-testing an inconclusive change is allowed only as a NEW prereg
     (fresh data, typically a larger design); earlier data are never pooled post hoc."""
-    menu = {k: v for k, v in MENU.items() if not all(ctx["champion"].get(a) == b for a, b in v[1].items())}
+    menu = {
+        k: v
+        for k, v in MENU.items()
+        if not all(ctx["champion"].get(a) == b for a, b in v[1].items()) and k not in ctx["replicating"]
+    }
     ev = (
         "\n".join(
             f"- campaign {e['campaign']} {e['key']} on [{e['champion']}] design {e['design']}: "

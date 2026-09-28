@@ -30,10 +30,12 @@
 question → hypothesis → prereg_draft → design_review → approved_design → implementation_checked
         → controls_passed → locked → run → analysed → {replicated | not_replicated} → written
                                                    └→ written (only if the decision is not "supported")
+        written (grade B, supported) → replication_queued → {replicated | not_replicated} → written
         parked: revision cap reached, underpowered at the largest design, or leak canary fired
 ```
 Key guards: `p_decisive>=0.8` and `controls_admissible` (statistician), `prereg_digest`, `digest_matches`,
-`independent_seat` + `same_digest` + `fresh_data` (replication), `decision_not_supported` (writing without replication).
+`independent_seat` + `same_digest` + `fresh_data` (replication), `decision_not_supported` (writing without replication),
+`grade_b_supported` + `tested_on_current_champion` + `under_replication_cap` (another replication attempt).
 
 ## Decisions (science/kernel.py)
 Relative WAPE reduction, treatment vs comparator, paired over units × origins, **pigeonhole bootstrap** (resample
@@ -43,13 +45,15 @@ C inconclusive/deviated · D failed controls.
 
 ## Campaign loop (harness/daemon.py)
 1. Explorer screen (code) ranks untested changes vs the champion on exploration panels — never evidence.
+   The statistician queues another replication (same locked prereg, fresh seed) for every supported grade-B
+   result tested against the current champion, before new hypotheses; at most 2 attempts per prereg.
 2. PI plans ≤ 2 tests from the evidence ledger, variance book, lessons and messages.
 3. Slices run the workflow; α per test = campaign α / planned tests, reserved at lock.
 4. `promote_champion`: only a grade-A replicated result against the current champion; others are re-tested later.
 5. Ledger, lessons and variance book are written (`ledger.json`) and feed the next campaign.
 
 ## Data separation (agents/common.py)
-Pilot seeds (power only) · exploration seeds (screen only) · primary seed per slice · replication seed per slice.
+Pilot seeds (power only) · exploration seeds (screen only) · primary seed per slice · replication seed per slice · extra-replication seeds (90000+).
 Never reuse one for another purpose.
 
 ## Lab floor (api/floor.py + web/floor.html)

@@ -57,6 +57,7 @@
    "locked",
    "run",
    "analysed",
+   "replication_queued",
    "replicated",
    "not_replicated",
    "written",
@@ -151,6 +152,42 @@
    },
    {
     "from": "analysed",
+    "to": "not_replicated",
+    "by": [
+     "replicator"
+    ],
+    "requires": [
+     "independent_seat",
+     "same_digest",
+     "fresh_data"
+    ]
+   },
+   {
+    "from": "written",
+    "to": "replication_queued",
+    "by": [
+     "statistician"
+    ],
+    "requires": [
+     "grade_b_supported",
+     "tested_on_current_champion",
+     "under_replication_cap"
+    ]
+   },
+   {
+    "from": "replication_queued",
+    "to": "replicated",
+    "by": [
+     "replicator"
+    ],
+    "requires": [
+     "independent_seat",
+     "same_digest",
+     "fresh_data"
+    ]
+   },
+   {
+    "from": "replication_queued",
     "to": "not_replicated",
     "by": [
      "replicator"

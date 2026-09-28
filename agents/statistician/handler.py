@@ -7,7 +7,18 @@ import contextlib
 import numpy as np
 from scipy.stats import norm
 
-from agents.common import DESIGNS, MENU, PILOT_SEEDS, PLACEBO, POSITIVE_CONTROL, describe_config, evaluate_arm
+from agents.common import (
+    DESIGNS,
+    EXTRA_REPLICATION_SEED0,
+    MENU,
+    PILOT_SEEDS,
+    PLACEBO,
+    POSITIVE_CONTROL,
+    REPLICATION_CAP,
+    describe_config,
+    evaluate_arm,
+    slice_grade,
+)
 from judges import forecast as fh
 from science import kernel as sk
 from state.rig import GuardError
@@ -39,6 +50,43 @@ def promote_champion(rig, ctx):
         if e is not best:
             ctx["lessons"].append(f"{e['key']} replicated on the old champion but must be re-tested on the new one")
     return best["key"]
+
+
+def replication_checks(rig, sid, ctx):
+    """Guard evidence for queueing another replication of a locked prereg, read from the proof files."""
+    return {
+        "grade_b_supported": slice_grade(rig, sid).startswith("B: supported"),
+        "tested_on_current_champion": ctx["locked"][sid].comparator == ctx["champion"],
+        "under_replication_cap": len(rig.read_proof(sid, "replications.json") or []) < REPLICATION_CAP,
+    }
+
+
+def schedule_replications(rig, ctx):
+    """Campaign start, before new hypotheses: every supported grade-B result tested against the current
+    champion gets another replication of the SAME locked prereg on a fresh seed. The rig refuses (and logs)
+    a slice that has used up its attempts."""
+    seat, queued = rig.seat_for("statistician"), []
+    latest = {e["slice"]: e for e in ctx["evidence"]}
+    for sid, e in latest.items():
+        if not e["grade"].startswith("B: supported") or e["champion"] != ctx["champion_desc"]:
+            continue
+        if rig.stage(sid) != "written":
+            continue
+        n = len(rig.read_proof(sid, "replications.json") or [])
+        seed = EXTRA_REPLICATION_SEED0 + 100 * ctx["campaign"] + len(queued)
+        try:
+            rig.advance(
+                seat,
+                sid,
+                "replication_queued",
+                checks=replication_checks(rig, sid, ctx),
+                note=f"attempt {n + 1}, seed {seed}",
+            )
+        except GuardError:
+            continue  # the rig logged the refusal
+        rig.queue(seat, rig.seat_for("replicator"), "replicate", sid, dict(seed=seed, attempt=n + 1))
+        queued.append(e["key"])
+    return queued
 
 
 # ---------------------------------------------------------------------------- statistician (code only)

@@ -6,6 +6,7 @@ import json
 import re
 
 from judges import forecast as fh
+from science import kernel as sk
 
 BASELINE_DESC = "pooled ridge on demand lags 1-4 and 4/13-week rolling means"
 
@@ -47,6 +48,12 @@ EXPLORATION_SEEDS = (6001, 6002)  # exploratory screens only; never used for con
 PILOT_SEEDS = (7001, 7002, 7003)  # power/controls only; never used for confirmatory tests
 
 
+EXTRA_REPLICATION_SEED0 = 90_000  # + 100 * campaign + slot: extra replications of grade-B results only
+
+
+REPLICATION_CAP = 2  # replication attempts per locked prereg, the first included
+
+
 POSITIVE_CONTROL = dict(fh.BASELINE, yoy=True)  # known large effect
 
 
@@ -82,6 +89,13 @@ def evaluate_arm(genome, design, seed, cache):
     d = DESIGNS[design]
     panel = cache.setdefault(("panel", seed, design), fh.make_panel(seed, T=d["T"]))
     return fh.evaluate(panel, genome, d["origins"], cache.setdefault(("ev", seed, design), {}))
+
+
+def slice_grade(rig, sid):
+    """The evidence grade from the slice's proof files: the decision and the LATEST replication attempt."""
+    dec, repl = rig.read_proof(sid, "decision.json"), rig.read_proof(sid, "replication.json") or {}
+    replicated = repl.get("decision") == "supported" and bool(repl.get("same_treatment"))
+    return sk.evidence_grade(dec["decision"], replicated, deviations=0, controls_ok=True)
 
 
 # ---------------------------------------------------------------------------- prereg text from config

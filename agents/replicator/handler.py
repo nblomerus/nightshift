@@ -24,7 +24,9 @@ def replicator_replicate(rig, seat, task, ctx):
     key = out.get("key")
     genome = dict(ctx["champion"], **MENU[key][1]) if key in MENU else None
     same_treatment = genome == pre.treatment
-    seed = ctx["replication_seed"][sid]
+    seed = task["payload"].get("seed", ctx["replication_seed"][sid])
+    attempts = rig.read_proof(sid, "replications.json") or []
+    used = {ctx["primary_seed"][sid]} | {a["seed"] for a in attempts}
     rng = np.random.default_rng(2)
     if genome is None:
         dec = "inconclusive"
@@ -37,6 +39,7 @@ def replicator_replicate(rig, seat, task, ctx):
         reimplemented_as=key, same_treatment=same_treatment, seed=seed, decision=dec, reasoning=out.get("reasoning")
     )
     rig.proof(sid, "replication.json", rep)
+    rig.proof(sid, "replications.json", attempts + [dict(rep, attempt=len(attempts) + 1, campaign=ctx["campaign"])])
     to = "replicated" if (dec == "supported" and same_treatment) else "not_replicated"
     rig.advance(
         seat,
@@ -45,7 +48,7 @@ def replicator_replicate(rig, seat, task, ctx):
         checks={
             "independent_seat": seat != rig.seat_for("experimenter"),
             "same_digest": pre.verify(),
-            "fresh_data": seed != ctx["primary_seed"][sid],
+            "fresh_data": seed not in used,
         },
         note=f"{dec}; reimplementation {'matched' if same_treatment else 'DIFFERED'}",
     )
