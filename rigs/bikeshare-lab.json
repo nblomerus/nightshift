@@ -261,7 +261,8 @@
     ],
     "requires": [
      "p_decisive>=0.8",
-     "controls_admissible"
+     "controls_admissible",
+     "censor_mask_available"
     ]
    },
    {
@@ -306,6 +307,12 @@
   "set_by": "PROPOSAL (docs/specs/bikeshare.md \u00a78): the owner fixes these before the first real campaign; no seat may change them",
   "alpha_rule": "Bonferroni: alpha_campaign / number of planned confirmatory tests, reserved at lock",
   "power_rule": "P(decisive result: supported, harmful or no_effect) >= 0.8 at the pilot effect estimate from pilot panels that are never reused; power at the target effect is reported alongside",
-  "leak_rule": "treatment must pass the judge's leak canary before lock"
+  "leak_rule": "treatment must pass the judge's leak canary before lock",
+  "censoring": {
+   "empty_minutes": 60,
+   "min_coverage": 0.9,
+   "month_coverage": 0.9,
+   "rule": "a station-day is censored if renting with no bike for >= empty_minutes, unknown if fewer than min_coverage of the day's polls saw it; both are excluded from scoring in months with snapshots on >= month_coverage of days"
+  }
  }
 }

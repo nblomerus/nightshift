@@ -49,7 +49,7 @@ def load_judge(spec):
     except ImportError as e:
         raise ValueError(f"rigspec judge {name!r} cannot be imported: {e}") from e
     if hasattr(judge, "configure"):  # a real-data judge is pointed at its data before the check
-        judge.configure(spec.get("judge_config", {}))
+        judge.configure(spec.get("judge_config", {}), spec.get("decision_standards", {}))
     missing = [a for a in JUDGE_API if not hasattr(judge, a)]
     if missing:
         raise ValueError(f"rigspec judge {name!r} lacks {missing}")

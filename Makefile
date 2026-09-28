@@ -18,6 +18,7 @@ TARGET
     protocols                  Promotion-protocol benchmark (ratchet vs gates, ~4 min)
     collect                    Poll bike-share GBFS availability every 5 min into data/gbfs (SYSTEM=chi|bkn)
     ingest                     Download and aggregate bike-share trip months into data/bikeshare (SYSTEM=chi|bkn)
+    censor                     Reduce collected GBFS snapshots to the station-day censoring table (SYSTEM=chi|bkn)
     clean                      Remove caches and __pycache__ dirs
 
 See README.md for setup.
@@ -74,7 +75,7 @@ install:
 pre-commit:
 	pre-commit install
 
-.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols collect ingest clean
+.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols collect ingest censor clean
 
 # Non-mutating lint + format check — mirrors the CI `lint` job. Use `make ruff` to autofix.
 check:
@@ -115,6 +116,9 @@ protocols:
 
 ingest:
 	$(VENV_PYTHON) -m ops.bikeshare_ingest --system $(SYSTEM)
+
+censor:
+	$(VENV_PYTHON) -m ops.gbfs_reduce --system $(SYSTEM)
 
 collect:
 	$(VENV_PYTHON) -m ops.gbfs_collect --system $(SYSTEM) --every 300

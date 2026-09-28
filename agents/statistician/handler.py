@@ -139,6 +139,8 @@ def statistician_power_controls(rig, seat, task, ctx):
     pos = sk.run_test(mk(J.POSITIVE_CONTROL), run, rng)["decision"]
     neg = sk.run_test(mk(J.PLACEBO), run, rng)["decision"]
     admissible = pos == "supported" and neg != "supported" and not leak
+    # judge-specific guards the rigspec requires before lock (e.g. a censoring mask for latent-demand models)
+    design_ok = J.design_checks(treat, pre["design"], J.data_keys("primary")[0]) if hasattr(J, "design_checks") else {}
     rep = dict(
         design=pre["design"],
         alpha=alpha,
@@ -151,8 +153,17 @@ def statistician_power_controls(rig, seat, task, ctx):
         positive_control=pos,
         negative_control=neg,
         admissible=admissible,
+        **design_ok,
     )
     rig.proof(sid, f"power_controls_r{pre['revision']}.json", rep)
+    if not all(design_ok.values()):
+        failed = [k for k, v in design_ok.items() if not v]
+        with contextlib.suppress(GuardError):  # refusal is logged by the rig
+            rig.advance(seat, sid, "controls_passed", checks=design_ok)
+        # every design scores the same kind of months, so no larger design fixes this
+        rig.advance(seat, sid, "parked", checks={"no_larger_design": True}, note=f"design check failed: {failed}")
+        rig.send(seat, rig.seat_for("pi"), f"{sid}: parked, the design fails {failed}.", sid)
+        return rep
     if leak:
         with contextlib.suppress(GuardError):  # refusal is logged by the rig; route back
             rig.advance(
@@ -203,7 +214,7 @@ def statistician_power_controls(rig, seat, task, ctx):
         seat,
         sid,
         "controls_passed",
-        checks={"p_decisive>=0.8": True, "controls_admissible": True},
+        checks={"p_decisive>=0.8": True, "controls_admissible": True, **design_ok},
         note=f"P(decisive) {p_decisive:.2f} at pilot effect {mu:+.2%}; leak canary clean",
     )
     d = J.DESIGNS[pre["design"]]

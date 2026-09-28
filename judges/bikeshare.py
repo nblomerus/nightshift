@@ -28,7 +28,9 @@ NAME = "bikeshare"
 TARGET = "station-day pickup WAPE two months ahead"
 BASELINE_DESC = "pooled Poisson GLM on day of week, the station's and the system's last-28-day mean pickups"
 
-BASELINE = dict(yoy=False, station_dow=False, holidays=False, neighbours=False, trend=False, tweedie=False, noise=0)
+BASELINE = dict(
+    yoy=False, station_dow=False, holidays=False, neighbours=False, trend=False, tweedie=False, censor=False, noise=0
+)
 MENU = {
     "yoy_level": ("Add the station's mean daily pickups in the same calendar month last year", {"yoy": True}),
     "station_dow": ("Add the station's own day-of-week profile over the last 8 weeks", {"station_dow": True}),
@@ -36,7 +38,9 @@ MENU = {
     "neighbour_pool": ("Add the mean last-28-day pickups of the station's 5 nearest stations", {"neighbours": True}),
     "system_trend": ("Add the system's 12-month growth ratio", {"trend": True}),
     "tweedie_loss": ("Fit a Tweedie (p=1.5) GLM instead of Poisson", {"tweedie": True}),
+    "censor_correct": ("Fit on latent demand: leave censored station-days out of training", {"censor": True}),
 }
+NEEDS_CENSOR_MASK = ("censor",)  # config fields that model latent demand: scorable only on masked months
 POSITIVE_CONTROL = dict(BASELINE, yoy=True)  # seasonality two months ahead: a large known effect
 PLACEBO = dict(BASELINE, noise=1)  # a pure-noise feature
 
@@ -45,7 +49,12 @@ FIRST_TARGET = "202201"  # leaves >= 11 months of history for year-over-year fea
 PURPOSE_ROLE = {"pilot": "pilot", "exploration": "exploration", "primary": "confirmation", "replication": "replication"}
 TRAIN_MONTHS = 12
 
-CONFIG = dict(root=os.environ.get("NIGHTSHIFT_BIKESHARE_ROOT", os.path.join("data", "bikeshare", "chi")))
+CONFIG = dict(
+    root=os.environ.get("NIGHTSHIFT_BIKESHARE_ROOT", os.path.join("data", "bikeshare", "chi")),
+    # decision standards for the censoring mask (spec §4); the rigspec may set them, no seat may
+    censoring=dict(empty_minutes=60, min_coverage=0.9, month_coverage=0.9),
+)
+OK, CENSORED, NO_DATA = 1, 2, 0  # station-day status from GBFS snapshots
 FILES: tuple = ()
 DESIGNS: dict = {}
 _PANELS: dict = {}
@@ -71,11 +80,16 @@ def data_keys(purpose, campaign=0, slot=0):
 
 
 # ---------------------------------------------------------------------------- data
-def configure(config):
-    """Point the judge at an ingested system (ops/bikeshare_ingest.py) and fix the designs from its months."""
+def configure(config, standards=None):
+    """Point the judge at an ingested system (ops/bikeshare_ingest.py) and fix the designs from its months. The
+    censoring thresholds come from the rigspec's decision standards when it sets them."""
     CONFIG.update(config)
+    if standards and "censoring" in standards:
+        CONFIG["censoring"] = dict(standards["censoring"])
     manifest = os.path.join(CONFIG["root"], "manifest.json")
-    globals()["FILES"] = (__file__, manifest)  # the data manifest is locked into every prereg with the code
+    censor = os.path.join(CONFIG["root"], "censor_day.csv.gz")
+    # the data manifest and the censoring table are locked into every prereg with the code
+    globals()["FILES"] = (__file__, manifest) + ((censor,) if os.path.exists(censor) else ())
     targets = target_months(load_panel())
     recent = targets[-24:]
     conf_all = [m for m in targets if role(m) == "confirmation"]
@@ -93,7 +107,11 @@ def load_panel(root=None, as_of=None):
     with open(os.path.join(root, "manifest.json")) as f:
         manifest = json.load(f)["months"]
     months = sorted(m for m, e in manifest.items() if as_of is None or e["published_at"] <= as_of)
-    key = (root, as_of, tuple((m, manifest[m]["sha256"]) for m in months))
+    censor = os.path.join(root, "censor_day.csv.gz")
+    stamp = (
+        (os.path.getmtime(censor), json.dumps(CONFIG["censoring"], sort_keys=True)) if os.path.exists(censor) else None
+    )
+    key = (root, as_of, tuple((m, manifest[m]["sha256"]) for m in months), stamp)
     if key in _PANELS:
         return _PANELS[key]
     frames, coords = [], {}
@@ -111,6 +129,7 @@ def load_panel(root=None, as_of=None):
     sd = sd[sd["date"].isin(d_idx)]
     Y[sd["station"].map(s_idx).to_numpy(), sd["date"].map(d_idx).to_numpy()] = sd["pickups"].to_numpy()
     panel = dict(
+        C=_censor_status(root, stations, d_idx, len(days)),
         Y=Y,
         days=days,
         month_of_day=np.array([d.strftime("%Y%m") for d in days]),
@@ -120,6 +139,31 @@ def load_panel(root=None, as_of=None):
     )
     _PANELS[key] = panel
     return panel
+
+
+def _censor_status(root, stations, d_idx, n_days):
+    """[station, day] status from ops/gbfs_reduce.py: OK, CENSORED (empty too long, or too few polls: unknown), or
+    NO_DATA (no snapshots that day at all). Thresholds are decision standards (CONFIG['censoring'])."""
+    C = np.zeros((len(stations), n_days), dtype=np.int8)
+    path = os.path.join(root, "censor_day.csv.gz")
+    if not os.path.exists(path):
+        return C
+    t, s_idx = CONFIG["censoring"], {s: i for i, s in enumerate(stations)}
+    cd = pd.read_csv(path)
+    cd = cd[cd["date"].isin(d_idx)]
+    have_day = np.zeros(n_days, bool)
+    have_day[cd["date"].map(d_idx).to_numpy()] = True
+    C[:, have_day] = CENSORED  # a station the snapshots never saw that day is unknown
+    cd = cd[cd["station"].isin(s_idx)]
+    ok = (cd["empty_minutes"] < t["empty_minutes"]) & (cd["coverage"] >= t["min_coverage"])
+    C[cd["station"].map(s_idx).to_numpy(), cd["date"].map(d_idx).to_numpy()] = np.where(ok, OK, CENSORED)
+    return C
+
+
+def masked(panel, month):
+    """A month is masked if snapshots exist for enough of its days; only then are censored days excluded."""
+    days = _month_days(panel, month)
+    return len(days) > 0 and (panel["C"][:, days] != NO_DATA).any(0).mean() >= CONFIG["censoring"]["month_coverage"]
 
 
 def target_months(panel):
@@ -235,8 +279,12 @@ def predict_month(panel, Y, month, g):
         if te < 56:
             continue
         X, uni = _design_rows(panel, Y, te, tm, month_add(tm, -2), g, rng)
+        y = Y[np.ix_(uni, tdays)].reshape(-1)
+        if g.get("censor") and masked(panel, tm):  # latent demand: censored days say nothing about it
+            keep = panel["C"][np.ix_(uni, tdays)].reshape(-1) == OK
+            X, y = X[keep], y[keep]
         Xs.append(X)
-        ys.append(Y[np.ix_(uni, tdays)].reshape(-1))
+        ys.append(y)
     model = _fit_glm(np.vstack(Xs), np.concatenate(ys), 1.5 if g["tweedie"] else 1.0)
     X, uni = _design_rows(panel, Y, e, month, view_month, g, rng)
     return uni, month_dates(month), model(X).reshape(len(uni), -1)
@@ -248,19 +296,38 @@ def _origins(design, key):
     return [m for m in target_months(load_panel()) if m >= window and role(m) == key]
 
 
+def design_checks(genome, design, key):
+    """Guards the rigspec requires before lock: a latent-demand treatment needs every scored month masked."""
+    needs = any(genome.get(f) for f in NEEDS_CENSOR_MASK)
+    panel = load_panel()
+    return {"censor_mask_available": not needs or all(masked(panel, m) for m in _origins(design, key))}
+
+
 def evaluate(genome, design, key, cache):
-    """abs_err[station, origin] and actual[station, origin] over the design's months of role `key`."""
+    """abs_err[station, origin] and actual[station, origin] over the design's months of role `key`. In a masked
+    month only uncensored station-days are scored, for both arms alike; the censor rate is reported."""
     ck = ("bikeshare", design, key, json.dumps(genome, sort_keys=True))
     if ck in cache:
         return cache[ck]
     panel, months = load_panel(), _origins(design, key)
     S = len(panel["stations"])
     abs_err, actual = np.zeros((S, len(months))), np.zeros((S, len(months)))
+    censor_rate = []
     for j, m in enumerate(months):
         uni, _, pred = predict_month(panel, panel["Y"], m, genome)
-        y = panel["Y"][np.ix_(uni, _month_days(panel, m))]
-        abs_err[uni, j], actual[uni, j] = np.abs(pred - y).sum(1), y.sum(1)
-    out = dict(abs_err=abs_err, actual=actual, wape=abs_err.sum() / actual.sum(), origins=months)
+        days = _month_days(panel, m)
+        y = panel["Y"][np.ix_(uni, days)]
+        keep = panel["C"][np.ix_(uni, days)] == OK if masked(panel, m) else np.ones_like(y, bool)
+        abs_err[uni, j], actual[uni, j] = (np.abs(pred - y) * keep).sum(1), (y * keep).sum(1)
+        censor_rate.append(float(1 - keep.mean()))
+    out = dict(
+        abs_err=abs_err,
+        actual=actual,
+        wape=abs_err.sum() / actual.sum(),
+        origins=months,
+        masked=[masked(panel, m) for m in months],
+        censor_rate=censor_rate,
+    )
     cache[ck] = out
     return out
 

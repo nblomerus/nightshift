@@ -117,3 +117,29 @@ def stub_get(zips):
         return zips[url.rsplit("/", 1)[1][:6]][0]
 
     return get
+
+
+def gbfs_day(root, day, stations, empty_polls=None, missing_polls=None, every=300, tz="America/Chicago"):
+    """Write one collector day file (ops/gbfs_collect.py format) and its station_information.
+    stations: {station_id: name}; empty_polls / missing_polls: {station_id: number of polls}."""
+    import csv
+    import gzip
+    import json
+    import os
+    from zoneinfo import ZoneInfo
+
+    empty_polls, missing_polls = empty_polls or {}, missing_polls or {}
+    start = dt.datetime.fromisoformat(day).replace(tzinfo=ZoneInfo(tz)).timestamp()
+    os.makedirs(os.path.join(root, "station_information"), exist_ok=True)
+    with open(os.path.join(root, "station_information", f"{day}.json"), "w") as f:
+        json.dump([dict(station_id=s, name=n, short_name=s) for s, n in stations.items()], f)
+    with gzip.open(os.path.join(root, f"{day}.csv.gz"), "wt", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["fetched_at", "station_id", "last_reported", "num_bikes_available", "num_docks_available",
+                    "is_installed", "is_renting", "is_returning"])  # fmt: skip
+        for k in range(86_400 // every):
+            for s in stations:
+                if k < missing_polls.get(s, 0):
+                    continue
+                bikes = 0 if k < empty_polls.get(s, 0) else 5
+                w.writerow([int(start) + k * every, s, int(start) + k * every, bikes, 10 - bikes, 1, 1, 1])
