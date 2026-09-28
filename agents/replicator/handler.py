@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from agents.common import MENU, ask_json, evaluate_arm, persona
+from agents.common import MENU, ask_json, audit_locked, evaluate_arm, persona
 from science import kernel as sk
 
 
@@ -12,6 +12,7 @@ from science import kernel as sk
 def replicator_replicate(rig, seat, task, ctx):
     sid = task["slice"]
     pre = ctx["locked"][sid]
+    audit_locked(rig, sid, pre, seat, "replication")
     menu = "\n".join(f"- {k}: {v[0]}" for k, v in MENU.items())
     out = ask_json(
         ctx["llm"],

@@ -8,6 +8,8 @@ State lives in one SQLite file; every seat's notes and every slice's proof live 
     <root>/slices/<slice>/spec.md         the question + hypothesis
     <root>/slices/<slice>/progress.md     append-only log
     <root>/slices/<slice>/proof/*.json    prereg, controls, results, decisions
+
+A change to a locked prereg is a deviation: it is recorded in `prereg_deviations` and downgrades the grade.
 """
 
 from __future__ import annotations
@@ -37,6 +39,8 @@ class Rig:
         CREATE TABLE IF NOT EXISTS slices(id TEXT PRIMARY KEY, stage TEXT, title TEXT);
         CREATE TABLE IF NOT EXISTS slice_events(slice TEXT, ts REAL, seat TEXT, frm TEXT, to_stage TEXT,
             ok INTEGER, note TEXT);
+        CREATE TABLE IF NOT EXISTS prereg_deviations(slice TEXT, ts REAL, seat TEXT, field TEXT, before TEXT,
+            after TEXT, reason TEXT);
         """)
         self.transitions = {(t["from"], t["to"]): t for t in spec["workflow"]["transitions"]}
         for s in spec["seats"]:
@@ -144,6 +148,22 @@ class Rig:
         self.db.execute("UPDATE slices SET stage=? WHERE id=?", (to_stage, slice_id))
         self.db.commit()
         self.log(slice_id, seat, f"{frm} -> {to_stage}" + (f" ({note})" if note else ""))
+
+    # ------------------------------------------------------------------ deviations
+    def record_deviation(self, slice_id, seat, field, before, after, reason):
+        """`seat` is the seat that found the change; values are stored as JSON."""
+        self.db.execute(
+            "INSERT INTO prereg_deviations VALUES(?,?,?,?,?,?,?)",
+            (slice_id, time.time(), seat, field, json.dumps(before, default=str), json.dumps(after, default=str), reason),
+        )
+        self.db.commit()
+        self.log(slice_id, seat, f"DEVIATION {field}: {before!r} -> {after!r} ({reason})")
+
+    def deviations(self, slice_id):
+        rows = self.db.execute(
+            "SELECT seat, field, before, after, reason FROM prereg_deviations WHERE slice=? ORDER BY ts", (slice_id,)
+        )
+        return [dict(seat=s, field=f, before=json.loads(b), after=json.loads(a), reason=r) for s, f, b, a, r in rows]
 
     # ------------------------------------------------------------------ workspace
     def proof(self, slice_id, name, obj):

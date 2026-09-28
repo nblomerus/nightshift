@@ -14,6 +14,7 @@ from agents.common import (
     PLACEBO,
     POSITIVE_CONTROL,
     REPLICATION_CAP,
+    audit_locked,
     describe_config,
     evaluate_arm,
     slice_grade,
@@ -234,6 +235,7 @@ def statistician_power_controls(rig, seat, task, ctx):
 def statistician_analyse(rig, seat, task, ctx):
     sid = task["slice"]
     pre, res = ctx["locked"][sid], rig.read_proof(sid, "run_result.json")
+    audit_locked(rig, sid, pre, seat, "analysis")
     rng = np.random.default_rng(1)
     alpha = pre.alpha  # reserved at lock (campaign Bonferroni)
     est = sk.paired_effect(np.array(res["err_t"]), np.array(res["err_c"]), alpha, pre.n_boot, rng)
