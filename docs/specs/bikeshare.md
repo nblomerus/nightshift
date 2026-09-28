@@ -69,6 +69,12 @@ availability-censored observations, with a monthly forecast that is locked befor
   refused by a rigspec guard on any design that includes an unmasked month, because scoring a latent-demand model
   against censored pickups penalises it for being right.
 - The minute threshold and coverage threshold are decision standards: fixed in the rigspec, not chosen by a seat.
+- **First observation (2026-09-28, one evening):** 43 % of Divvy station polls showed a station renting with no
+  bike. Censoring is heavy; expect the mask to remove a large share of station-days, weighted towards the stations
+  where latent demand matters most. The censor rate is reported per origin for that reason.
+- **Built (8d):** `make censor SYSTEM=chi` reduces snapshots (every complete local day) to
+  `data/bikeshare/<system>/censor_day.csv.gz`. The judge joins it on station name, and its file is locked into the
+  judge digest. A station a day's snapshots never saw is `unknown`.
 
 ## 5. Data roles (invariant 9 on real data)
 Synthetic panels got fresh data from a new seed. Real data is finite, so roles are **disjoint target months**:
