@@ -108,8 +108,9 @@ def lock(system, out_root, champion_keys, now=None):
     return record
 
 
-def score(system, month, out_root, scores_root, n_boot=2000):
-    """Score a locked month once the operator has published it."""
+def station_errors(system, month, out_root):
+    """Check a lock and return (lock record, per-station champion/baseline abs errors and actuals, censor rate,
+    masked) over the station-days the censoring mask keeps."""
     out = os.path.join(out_root, system, month)
     with open(os.path.join(out, "lock.json")) as f:
         record = json.load(f)
@@ -136,14 +137,20 @@ def score(system, month, out_root, scores_root, n_boot=2000):
     kept = fc[fc["keep"]]
     by_station = kept.assign(e_c=(kept["forecast_c"] - kept["y"]).abs(), e_b=(kept["forecast_b"] - kept["y"]).abs())
     g = by_station.groupby("station")[["e_c", "e_b", "y"]].sum()
+    return record, g, float(1 - keep.mean()), bool(use_mask), int(len(kept))
+
+
+def score(system, month, out_root, scores_root, sesoi=0.02, n_boot=2000):
+    """Score a locked month once the operator has published it, then re-pool every scored month."""
+    record, g, censor_rate, use_mask, n_kept = station_errors(system, month, out_root)
     est = sk.paired_effect(g[["e_c"]].to_numpy(), g[["e_b"]].to_numpy(), 0.05, n_boot, np.random.default_rng(0))
     result = dict(
         system=system,
         target_month=month,
         lock=record,
-        masked=bool(use_mask),
-        censor_rate=float(1 - keep.mean()),
-        station_days=int(len(kept)),
+        masked=use_mask,
+        censor_rate=censor_rate,
+        station_days=n_kept,
         stations=int(len(g)),
         wape_champion=float(g["e_c"].sum() / g["y"].sum()),
         wape_baseline=float(g["e_b"].sum() / g["y"].sum()),
@@ -153,7 +160,24 @@ def score(system, month, out_root, scores_root, n_boot=2000):
     os.makedirs(os.path.join(scores_root, system), exist_ok=True)
     with open(os.path.join(scores_root, system, f"{month}.json"), "w") as f:
         json.dump(result, f, indent=1, sort_keys=True)
+    result["cumulative"] = cumulative(system, out_root, scores_root, sesoi, n_boot)
     return result
+
+
+def cumulative(system, out_root, scores_root, sesoi, n_boot=2000):
+    """The public claim: every published, locked month pooled (two-way bootstrap over stations x months), decided
+    by the kernel at the prospective SESOI. A month is included whatever its result; none can be left out."""
+    published = bj.load_panel()["published"]
+    months = sorted(m for m in os.listdir(os.path.join(out_root, system)) if m in published)
+    per = {m: station_errors(system, m, out_root)[1] for m in months}
+    stations = sorted(set().union(*(set(g.index) for g in per.values())))
+    err_c = np.column_stack([per[m]["e_c"].reindex(stations, fill_value=0).to_numpy() for m in months])
+    err_b = np.column_stack([per[m]["e_b"].reindex(stations, fill_value=0).to_numpy() for m in months])
+    est = sk.paired_effect(err_c, err_b, 0.05, n_boot, np.random.default_rng(0))
+    out = dict(system=system, months=months, sesoi=sesoi, estimate=est, decision=sk.decide(est, sesoi))
+    with open(os.path.join(scores_root, system, "cumulative.json"), "w") as f:
+        json.dump(out, f, indent=1, sort_keys=True)
+    return out
 
 
 def main(argv=None):
@@ -166,6 +190,7 @@ def main(argv=None):
     ap.add_argument("--month", default=None)
     ap.add_argument("--forecasts", default="forecasts")
     ap.add_argument("--scores", default="scores")
+    ap.add_argument("--rigspec", default=os.path.join(REPO_ROOT, "rigs", "bikeshare-lab.json"))
     a = ap.parse_args(argv)
     bj.configure(dict(root=a.data or os.path.join("data", "bikeshare", a.system)))
     if a.cmd == "lock":
@@ -177,11 +202,16 @@ def main(argv=None):
         print(f"locked {path} (champion: {keys or 'baseline'}). Publish the timestamp now:")
         print(f"  git add {path} && git commit -m 'Lock {a.system} forecasts for {rec['target_month']}' && git push")
     else:
-        r = score(a.system, a.month, a.forecasts, a.scores)
+        with open(a.rigspec) as f:
+            sesoi = json.load(f)["decision_standards"]["prospective"]["sesoi"]
+        r = score(a.system, a.month, a.forecasts, a.scores, sesoi=sesoi)
         e = r["relative_wape_reduction"]
         wapes = f"champion WAPE {r['wape_champion']:.3f} vs baseline {r['wape_baseline']:.3f}"
         ci = f"reduction {e['point']:+.1%} [{e['lo']:+.1%}, {e['hi']:+.1%}]"
         print(f"{a.month}: {wapes}; {ci}; censor rate {r['censor_rate']:.0%}")
+        c = r["cumulative"]
+        n, point = len(c["months"]), c["estimate"]["point"]
+        print(f"all {n} scored months: {c['decision']} at SESOI {c['sesoi']:.0%} ({point:+.1%})")
 
 
 if __name__ == "__main__":
