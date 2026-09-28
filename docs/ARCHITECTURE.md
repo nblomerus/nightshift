@@ -4,7 +4,8 @@
 | Owned by LLM seats | Owned by code (agents cannot edit or override) |
 |---|---|
 | which hypotheses to test (PI) | decision standards (rigspec) |
-| prereg statement, design choice, kill criterion (methodologist) | prereg lock + digest (`science/kernel.py`) |
+| rationale, design choice, kill criterion (methodologist) | prereg lock + digest (`science/kernel.py`) |
+| | prereg statement: arm text and decision clause generated from the machine config and standards (`agents/common.py`) |
 | design review before data (critic) | frozen judge: data, splits, metric, PIT replay, leak canary (`judges/`) |
 | implementability check; running the locked arms (experimenter) | power/assurance, controls, α reservation, decision (`agents/statistician`) |
 | independent re-implementation from text (replicator) | evidence grade, champion promotion |

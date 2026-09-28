@@ -194,7 +194,8 @@
      "experimenter"
     ],
     "requires": [
-     "implementable_exactly"
+     "implementable_exactly",
+     "statement_from_config"
     ]
    },
    {

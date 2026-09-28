@@ -9,6 +9,8 @@ import re
 
 from agents.common import MENU
 
+ORIGINAL_CHAMPION = "pooled ridge on demand lags 1-4 and 4/13-week rolling means"
+
 
 def _key_in(text: str) -> str | None:
     for k, (desc, _) in MENU.items():
@@ -39,7 +41,8 @@ def fake_llm(prompt: str, system: str | None = None, tier: str | None = None) ->
         return json.dumps(
             {
                 "hid": f"H-{key}",
-                "statement": f"{desc}, compared with the current champion, reduces next-4-week WAPE.",
+                # stale on purpose, like the real model after a promotion: it names the ORIGINAL champion
+                "statement": f"{desc}, compared with {ORIGINAL_CHAMPION}, reduces next-4-week WAPE.",
                 "design": design,
                 "kills_if": "CI lies within +-SESOI or below zero",
                 "rationale": "fake",
@@ -50,9 +53,13 @@ def fake_llm(prompt: str, system: str | None = None, tier: str | None = None) ->
     if "critic@" in who:
         return json.dumps({"verdict": "approve", "blocking": [], "message": "ok", "new_hypothesis_for_pi": None})
     if "experimenter@" in who:
-        return json.dumps({"implementable_exactly": True, "mismatch": "", "message": ""})
+        # strict: the statement must name the comparator the judge will actually run
+        statement = prompt.split("Draft prereg statement:\n")[1].split("\n")[0]
+        champion = re.search(r"against (.+?)\.\n", prompt).group(1)
+        ok = champion in statement
+        return json.dumps({"implementable_exactly": ok, "mismatch": "" if ok else "stale comparator", "message": ""})
     if "replicator@" in who:
-        return json.dumps({"key": _key_in(prompt.split("Statement:")[1].split("\n")[0]) or "", "reasoning": "text match"})
+        return json.dumps({"key": _key_in(prompt.split("Statement:")[1].split(". ")[0]) or "", "reasoning": "text match"})
     if "writer@" in who:
         return json.dumps({"headline": "Result as decided by the kernel", "finding_md": "Fake write-up."})
     return "{}"

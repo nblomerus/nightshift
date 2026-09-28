@@ -7,7 +7,7 @@ import re
 
 from judges import forecast as fh
 
-COMPARATOR_DESC = "the current champion: pooled ridge on demand lags 1-4 and 4/13-week rolling means"
+BASELINE_DESC = "pooled ridge on demand lags 1-4 and 4/13-week rolling means"
 
 
 MENU = {
@@ -84,8 +84,43 @@ def evaluate_arm(genome, design, seed, cache):
     return fh.evaluate(panel, genome, d["origins"], cache.setdefault(("ev", seed, design), {}))
 
 
+# ---------------------------------------------------------------------------- prereg text from config
+def describe_config(config):
+    """Plain-language description of a machine config: the baseline plus every MENU change it contains.
+    Refuses a config that is not the baseline plus MENU changes, rather than describing it wrongly."""
+    keys = [k for k, (_, p) in MENU.items() if all(config.get(f) == v for f, v in p.items())]
+    rebuilt = dict(fh.BASELINE)
+    for k in keys:
+        rebuilt.update(MENU[k][1])
+    if rebuilt != config:
+        raise ValueError(f"config is not the baseline plus menu changes: {config}")
+    return " + ".join([BASELINE_DESC] + [MENU[k][0].lower() for k in keys])
+
+
+def decision_clause(std, alpha):
+    """The decision rule of science/kernel.py::decide in words. Cites the SESOI only: the target effect
+    sizes the design, it is not a threshold for the result."""
+    s = f"{std['sesoi']:.1%}"
+    return (
+        f"Decision, on the {1 - alpha:.1%} two-way bootstrap CI of the relative WAPE reduction: supported if the "
+        f"CI lies above zero and the point estimate is at least the SESOI of {s}; harmful if the CI lies below "
+        f"zero; no effect if the CI lies within +-{s}; otherwise inconclusive."
+    )
+
+
+def prereg_statement(champion, key, std, alpha):
+    """The prereg statement, built only from the machine config and the fixed decision standards."""
+    comparator = describe_config(champion)
+    treatment = describe_config(dict(champion, **MENU[key][1]))
+    return (
+        f"Hypothesis: the change '{MENU[key][0]}' reduces next-4-week WAPE relative to the current champion. "
+        f"Comparator (current champion): {comparator}. Treatment: {treatment}. {decision_clause(std, alpha)}"
+    )
+
+
 # ---------------------------------------------------------------------------- methodologist
 PREREG_KEYS = ["hid", "statement", "design", "kills_if", "rationale"]
+LLM_PREREG_KEYS = ["design", "kills_if", "rationale"]  # the rest is generated from config
 
 
 REVISION_CAP = 3
