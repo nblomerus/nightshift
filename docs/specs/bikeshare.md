@@ -111,6 +111,15 @@ item 5 lets seats write code.
 - **Acceptance:** with a stubbed HTTP fetch: rows written per poll; a failed fetch is logged and the loop continues;
   a day file rolls over at local midnight; no network in tests.
 
+**Running it (built).** `make collect SYSTEM=chi` runs in the foreground. To keep it running on macOS across
+sleep and restarts:
+```bash
+python -m ops.gbfs_collect --system chi --print-launchd > ~/Library/LaunchAgents/com.nightshift.gbfs.chi.plist
+launchctl load ~/Library/LaunchAgents/com.nightshift.gbfs.chi.plist
+```
+Or with cron: `*/5 * * * * cd <repo> && PYTHONPATH=. <python> -m ops.gbfs_collect --system chi --polls 1`.
+One poll of Divvy is about 2,000 rows and 23 KB gzipped: about 0.6 M rows and 7 MB per day, 2.5 GB per year.
+
 ### 8b. Domain-pluggable lab
 - Move BASELINE, MENU, DESIGNS, controls and the data-role map out of `agents/common.py` into the judge module; the
   rigspec names the judge (`"judge": "judges.forecast"`); seats and the statistician get panels through

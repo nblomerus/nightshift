@@ -16,6 +16,7 @@ TARGET
     replay                     Build a self-contained replay page for RUN
     calibrate                  Lab self-calibration benchmark (planted-truth hypotheses, ~3 min)
     protocols                  Promotion-protocol benchmark (ratchet vs gates, ~4 min)
+    collect                    Poll bike-share GBFS availability every 5 min into data/gbfs (SYSTEM=chi|bkn)
     clean                      Remove caches and __pycache__ dirs
 
 See README.md for setup.
@@ -41,6 +42,7 @@ PYENV_NAME      = nightshift
 FLOOR_PORT     ?= 8765
 RUN            ?= runs/latest
 CAMPAIGNS      ?= 3
+SYSTEM         ?= chi
 
 # Repo root on the import path for `python -m ...` (top-level packages, no install step).
 export PYTHONPATH := $(CURDIR)
@@ -71,7 +73,7 @@ install:
 pre-commit:
 	pre-commit install
 
-.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols clean
+.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols collect clean
 
 # Non-mutating lint + format check — mirrors the CI `lint` job. Use `make ruff` to autofix.
 check:
@@ -109,6 +111,9 @@ calibrate:
 
 protocols:
 	$(VENV_PYTHON) -m eval.promotion_protocols
+
+collect:
+	$(VENV_PYTHON) -m ops.gbfs_collect --system $(SYSTEM) --every 300
 
 clean:
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +
