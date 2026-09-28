@@ -179,8 +179,9 @@ def main(argv=None):
     else:
         r = score(a.system, a.month, a.forecasts, a.scores)
         e = r["relative_wape_reduction"]
-        print(f"{a.month}: champion WAPE {r['wape_champion']:.3f} vs baseline {r['wape_baseline']:.3f}; "
-              f"reduction {e['point']:+.1%} [{e['lo']:+.1%}, {e['hi']:+.1%}]; censor rate {r['censor_rate']:.0%}")  # fmt: skip
+        wapes = f"champion WAPE {r['wape_champion']:.3f} vs baseline {r['wape_baseline']:.3f}"
+        ci = f"reduction {e['point']:+.1%} [{e['lo']:+.1%}, {e['hi']:+.1%}]"
+        print(f"{a.month}: {wapes}; {ci}; censor rate {r['censor_rate']:.0%}")
 
 
 if __name__ == "__main__":
