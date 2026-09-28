@@ -3,23 +3,25 @@ decision standards, never from LLM free text."""
 
 import pytest
 
-from agents.common import MENU, decision_clause, describe_config, prereg_statement
+from agents.common import decision_clause, describe_config, prereg_statement
 from harness.daemon import load_rigspec, run
 from harness.fake_llm import fake_llm
 from judges import forecast as fh
+from judges import forecast_lab as J
+from judges.forecast_lab import MENU
 from state.rig import GuardError, Rig
 
 
 def test_describe_config_names_every_component_of_the_config():
     champ = dict(fh.BASELINE, **MENU["last_year_window"][1], **MENU["promo_feature"][1])
-    text = describe_config(champ)
+    text = describe_config(J, champ)
     assert MENU["last_year_window"][0].lower() in text and MENU["promo_feature"][0].lower() in text
     assert MENU["log_target"][0].lower() not in text
 
 
 def test_describe_config_refuses_a_config_it_cannot_describe():
     with pytest.raises(ValueError):
-        describe_config(dict(fh.BASELINE, lags=(1, 2)))
+        describe_config(J, dict(fh.BASELINE, lags=(1, 2)))
 
 
 @pytest.mark.parametrize(("sesoi", "target"), [(0.01, 0.025), (0.02, 0.05), (0.005, 0.01), (0.03, 0.03)])
@@ -34,10 +36,10 @@ def test_decision_clause_cites_sesoi_and_never_the_target_effect(sesoi, target):
 
 def test_statement_names_both_arms_from_config():
     champ = dict(fh.BASELINE, **MENU["last_year_window"][1])
-    s = prereg_statement(champ, "promo_feature", dict(sesoi=0.01, target_effect=0.025), 0.05)
+    s = prereg_statement(J, champ, "promo_feature", dict(sesoi=0.01, target_effect=0.025), 0.05)
     assert s.startswith(f"Hypothesis: the change '{MENU['promo_feature'][0]}' reduces next-4-week WAPE")
-    assert f"Comparator (current champion): {describe_config(champ)}." in s
-    assert f"Treatment: {describe_config(dict(champ, **MENU['promo_feature'][1]))}." in s
+    assert f"Comparator (current champion): {describe_config(J, champ)}." in s
+    assert f"Treatment: {describe_config(J, dict(champ, **MENU['promo_feature'][1]))}." in s
 
 
 def test_rig_refuses_implementation_check_without_config_statement(tmp_path):

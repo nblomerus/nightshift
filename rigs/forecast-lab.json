@@ -1,6 +1,7 @@
 {
  "rig": "forecast-lab",
  "mission": "Find changes that reduce next-4-week WAPE of the SKU demand forecast, and establish them to the standard of a replicated, preregistered result.",
+ "judge": "judges.forecast_lab",
  "seats": {
   "pi@forecast-lab": {
    "role": "pi",

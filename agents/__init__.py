@@ -1,7 +1,6 @@
 """One package per seat (mirrors lab-foundry's agents/). The daemon reads HANDLERS / MESSAGE_HANDLERS."""
 
 from agents.common import *  # noqa: F401,F403
-from agents.common import fh  # noqa: F401
 from agents.critic.handler import critic_review
 from agents.experimenter.handler import experimenter_check, experimenter_run
 from agents.explorer.handler import explorer_screen  # noqa: F401

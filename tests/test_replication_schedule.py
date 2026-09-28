@@ -5,10 +5,11 @@ import json
 
 import pytest
 
-from agents.common import MENU, REPLICATION_CAP
+from agents.common import REPLICATION_CAP
 from agents.statistician.handler import replication_checks
 from harness.daemon import run
 from harness.fake_llm import fake_llm
+from judges.forecast_lab import MENU
 from state.rig import GuardError
 
 SLICE = "C1-S1-last_year_window"

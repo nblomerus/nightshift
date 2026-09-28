@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agents.common import MENU, ask_json, persona, slice_seed
+from agents.common import ask_json, persona
 
 
 # ---------------------------------------------------------------------------- PI
@@ -10,9 +10,10 @@ def pi_plan(rig, seat, task, ctx):
     """Plan campaign k from everything the lab knows: champion, exploratory screen, evidence ledger,
     lessons, critic suggestions. Re-testing an inconclusive change is allowed only as a NEW prereg
     (fresh data, typically a larger design); earlier data are never pooled post hoc."""
+    J = ctx["judge"]
     menu = {
         k: v
-        for k, v in MENU.items()
+        for k, v in J.MENU.items()
         if not all(ctx["champion"].get(a) == b for a, b in v[1].items()) and k not in ctx["replicating"]
     }
     ev = (
@@ -60,11 +61,11 @@ def pi_plan(rig, seat, task, ctx):
         sid = f"C{ctx['campaign']}-S{i + 1}-{key}"
         rig.new_slice(
             sid,
-            MENU[key][0],
-            f"# {MENU[key][0]}\n\nChampion: {ctx['champion_desc']}\n\nRationale (PI): {p['rationale']}\n",
+            J.MENU[key][0],
+            f"# {J.MENU[key][0]}\n\nChampion: {ctx['champion_desc']}\n\nRationale (PI): {p['rationale']}\n",
         )
-        ctx["primary_seed"][sid] = slice_seed("primary", ctx["campaign"], i)
-        ctx["replication_seed"][sid] = slice_seed("replication", ctx["campaign"], i)
+        ctx["primary_seed"][sid] = J.data_keys("primary", ctx["campaign"], i)[0]
+        ctx["replication_seed"][sid] = J.data_keys("replication", ctx["campaign"], i)[0]
         rig.advance(seat, sid, "hypothesis", note=p["rationale"][:120])
         rig.queue(seat, rig.seat_for("methodologist"), "draft_prereg", sid, dict(key=key, rationale=p["rationale"]))
     return dict(picks=[p["key"] for p in picks], lesson=out.get("lesson"))

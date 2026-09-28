@@ -37,7 +37,7 @@ Key guards: `p_decisive>=0.8` and `controls_admissible` (statistician), `prereg_
 `independent_seat` + `same_digest` + `fresh_data` (replication), `decision_not_supported` (writing without replication),
 `grade_b_supported` + `tested_on_current_champion` + `under_replication_cap` (another replication attempt).
 
-Judge integrity: the SHA-256 of the judge source (`agents/common.py::JUDGE_PATH`) is locked into the prereg as
+Judge integrity: the SHA-256 of the judge's source files (`FILES`: the frozen judge and its lab adapter) is locked into the prereg as
 `judge_digest` and stamped on `run_result`, `decision` and `replication`. `judge_unchanged` guards `locked → run`,
 `run → analysed` and both replication edges, and is checked before the judge runs.
 
@@ -61,7 +61,7 @@ C inconclusive/deviated · D failed controls.
 4. `promote_champion`: only a grade-A replicated result against the current champion; others are re-tested later.
 5. Ledger, lessons and variance book are written (`ledger.json`) and feed the next campaign.
 
-## Data separation (agents/common.py)
+## Data separation (the judge's `data_keys`; `judges/forecast_lab.py` for the synthetic judge)
 Pilot seeds (power only) · exploration seeds (screen only) · primary seed per slice · replication seed per slice · extra-replication seeds; per-slice seeds come from
 `slice_seed(purpose, campaign, slot)`, one block of a million per purpose.
 Never reuse one for another purpose.

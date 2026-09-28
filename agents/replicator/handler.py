@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import numpy as np
 
-from agents.common import MENU, ask_json, audit_locked, evaluate_arm, persona, require_judge
+from agents.common import ask_json, audit_locked, persona, require_judge
 from science import kernel as sk
 
 
 # ---------------------------------------------------------------------------- replicator
 def replicator_replicate(rig, seat, task, ctx):
     sid = task["slice"]
-    pre = ctx["locked"][sid]
+    pre, J = ctx["locked"][sid], ctx["judge"]
     audit_locked(rig, sid, pre, seat, "replication")
-    judge = require_judge(rig, seat, sid, pre, "not_replicated", {"same_digest": pre.verify()})
-    menu = "\n".join(f"- {k}: {v[0]}" for k, v in MENU.items())
+    judge = require_judge(rig, seat, sid, pre, "not_replicated", {"same_digest": pre.verify()}, J)
+    menu = "\n".join(f"- {k}: {v[0]}" for k, v in J.MENU.items())
     out = ask_json(
         ctx["llm"],
         rig.spec["seats"][seat],
@@ -24,7 +24,7 @@ def replicator_replicate(rig, seat, task, ctx):
         'Reply JSON: {"key": "...", "reasoning": "..."}',
     )
     key = out.get("key")
-    genome = dict(ctx["champion"], **MENU[key][1]) if key in MENU else None
+    genome = dict(ctx["champion"], **J.MENU[key][1]) if key in J.MENU else None
     same_treatment = genome == pre.treatment
     seed = task["payload"].get("seed", ctx["replication_seed"][sid])
     attempts = rig.read_proof(sid, "replications.json") or []
@@ -34,7 +34,7 @@ def replicator_replicate(rig, seat, task, ctx):
         dec = "inconclusive"
     else:
         d = pre.design["name"]
-        t, c = evaluate_arm(genome, d, seed, ctx["cache"]), evaluate_arm(pre.comparator, d, seed, ctx["cache"])
+        t, c = J.evaluate(genome, d, seed, ctx["cache"]), J.evaluate(pre.comparator, d, seed, ctx["cache"])
         est = sk.paired_effect(t["abs_err"], c["abs_err"], pre.alpha, pre.n_boot, rng)
         dec = sk.decide(est, pre.sesoi)
     rep = dict(

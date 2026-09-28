@@ -25,7 +25,11 @@ def main(argv=None):
         from harness.daemon import run
 
         if a.fake_llm:
-            from harness.fake_llm import fake_llm as llm
+            from agents.common import load_judge
+            from harness.daemon import load_rigspec
+            from harness.fake_llm import make_fake_llm
+
+            llm = make_fake_llm(load_judge(load_rigspec(a.rigspec)).MENU)
         else:
             from harness.llm import openai_compatible_llm
 

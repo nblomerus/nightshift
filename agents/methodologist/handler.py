@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 
 from agents.common import (
-    DESIGNS,
     LLM_PREREG_KEYS,
-    MENU,
     PREREG_KEYS,
     REVISION_CAP,
     ask_json,
@@ -18,9 +16,10 @@ from agents.common import (
 
 def methodologist_draft(rig, seat, task, ctx):
     sid, key = task["slice"], task["payload"]["key"]
+    J = ctx["judge"]
     prev = rig.read_proof(sid, "prereg_draft.json")
     feedback = task["payload"].get("feedback", "")
-    designs = "\n".join(f"- {k}: {v['desc']}" for k, v in DESIGNS.items())
+    designs = "\n".join(f"- {k}: {v['desc']}" for k, v in J.DESIGNS.items())
     std = rig.spec["decision_standards"]
     if prev and prev.get("revision", 0) + 1 >= REVISION_CAP:
         rig.advance(seat, sid, "parked", checks={"revision_cap_reached": True}, note="revision cap reached")
@@ -31,9 +30,9 @@ def methodologist_draft(rig, seat, task, ctx):
         rig.spec["seats"][seat],
         persona(rig, seat),
         f"Draft a preregistration for this change to {ctx['champion_desc']}.\n"
-        f"The frozen judge implements EXACTLY this treatment and nothing else: '{MENU[key][0]}'. "
+        f"The frozen judge implements EXACTLY this treatment and nothing else: '{J.MENU[key][0]}'. "
         f"Its machine config (authoritative, locked with your prereg): treatment="
-        f"{json.dumps(dict(ctx['champion'], **MENU[key][1]))}, comparator={json.dumps(ctx['champion'])} "
+        f"{json.dumps(dict(ctx['champion'], **J.MENU[key][1]))}, comparator={json.dumps(ctx['champion'])} "
         "(naive inverse transforms, no bias corrections, no extra tuning). The statement naming both arms and "
         "the decision rule is generated from this config; if you believe a variant is better, say so in "
         "rationale — it would be a separate hypothesis.\n"
@@ -49,8 +48,8 @@ def methodologist_draft(rig, seat, task, ctx):
     )
     pre = {k: out.get(k) for k in LLM_PREREG_KEYS}
     pre["hid"] = f"H-{key}"
-    pre["statement"] = prereg_statement(ctx["champion"], key, std, ctx["alpha_per_test"])
-    pre["design"] = pre["design"] if pre["design"] in DESIGNS else "A"
+    pre["statement"] = prereg_statement(J, ctx["champion"], key, std, ctx["alpha_per_test"])
+    pre["design"] = pre["design"] if pre["design"] in J.DESIGNS else "A"
     pre["sesoi"], pre["target_effect"], pre["alpha"] = std["sesoi"], std["target_effect"], ctx["alpha_per_test"]
     pre["treatment_key"], pre["revision"] = key, (prev or {}).get("revision", -1) + 1
     rig.proof(sid, "prereg_draft.json", pre)
