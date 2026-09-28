@@ -22,7 +22,11 @@ availability-censored observations, with a monthly forecast that is locked befor
 
 - Trip files for month *m* appear 3–12 days after *m* ends; the S3 `LastModified` time is the month's
   **publication time** and is recorded for point-in-time replay.
-- Trip `start_station_id` equals GBFS `short_name`, not GBFS `station_id`. The join is on `short_name`.
+- **Stations are keyed by name.** Divvy replaced every station id in 2025-06 (e.g. `KA1503000071` → `CHI00252`);
+  1,008 of the 1,048 station names in 2025-01 still appear in 2025-07. Trip `start_station_id` equals GBFS
+  `short_name` only after the switch, so the censoring mask also joins on the name in `station_information`.
+- About 22 % of trips (2026-08: 189 k of 868 k) are dockless e-bike rentals with no start station. They are not
+  station demand; the manifest counts them.
 - The schema above holds from 2021-02; earlier files use a different schema and different station ids and are
   out of scope.
 - **Availability history is not published by anyone.** GBFS is current-state only, so the lab has to snapshot it
@@ -78,6 +82,12 @@ Synthetic panels got fresh data from a new seed. Real data is finite, so roles a
   **replication:** the replicator's re-run. **reserve:** untouched until the owner opens it (e.g. a second
   confirmation after a year of reuse).
 - Features for any origin may use all published history (roles restrict what is *scored*, not what is *known*).
+- **Power is limited by months, not stations.** A seasonal feature helps a lot at seasonal turning points and
+  little in mid-summer, and the two-way bootstrap counts that month-to-month variation. On the synthetic fixture
+  the pilot SE of the `yoy_level` effect is 7.9 points with 20 stations and still 7.9 with 80; about 11
+  confirmation months on real data give an SE near 6 points. A 2 % SESOI cannot be confirmed from backtests at
+  this split. The owner's options: accept a larger SESOI for backtested promotions; add pre-2021 history (older
+  schema, names may link); use fewer roles; or treat backtests as screening and let prospective months decide.
 - **Reuse is real:** every confirmatory test in the life of the lab scores against the same confirmation months,
   so they wear out under adaptive reuse. Only prospective months are never reused, and public claims come only
   from prospective scores.

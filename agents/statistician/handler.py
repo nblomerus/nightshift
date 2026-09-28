@@ -68,7 +68,11 @@ def schedule_replications(rig, ctx):
         if rig.stage(sid) != "written":
             continue
         n = len(rig.read_proof(sid, "replications.json") or [])
-        seed = ctx["judge"].data_keys("extra_replication", ctx["campaign"], len(queued))[0]
+        keys = ctx["judge"].data_keys("extra_replication", ctx["campaign"], len(queued))
+        if not keys:  # finite real data: no fresh months for another replication
+            rig.log(sid, seat, "grade B, but the judge has no fresh data for another replication")
+            continue
+        seed = keys[0]
         try:
             rig.advance(
                 seat,
@@ -206,7 +210,7 @@ def statistician_power_controls(rig, seat, task, ctx):
     locked = sk.Preregistration(
         hid=pre["hid"],
         statement=pre["statement"],
-        estimand="relative WAPE reduction, next-4-week sum, two-way bootstrap",
+        estimand=f"relative reduction in {J.TARGET}, two-way bootstrap",
         treatment=dict(ctx["champion"], **J.MENU[pre["treatment_key"]][1]),
         comparator=dict(ctx["champion"]),
         primary_metric="WAPE",
