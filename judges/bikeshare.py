@@ -26,13 +26,15 @@ import pandas as pd
 
 NAME = "bikeshare"
 TARGET = "station-day pickup WAPE two months ahead"
-BASELINE_DESC = "pooled Poisson GLM on day of week, the station's and the system's last-28-day mean pickups"
+BASELINE_DESC = (
+    "pooled Poisson GLM on day of week, the station's last-28-day and same-month-last-year mean pickups, and the "
+    "system's last-28-day mean"
+)
 
 BASELINE = dict(
-    yoy=False, station_dow=False, holidays=False, neighbours=False, trend=False, tweedie=False, censor=False, noise=0
-)
+    yoy=True, station_dow=False, holidays=False, neighbours=False, trend=False, tweedie=False, censor=False, noise=0
+)  # seasonal: two months ahead, a baseline without last year's level is a straw man (owner decision 2026-09-28)
 MENU = {
-    "yoy_level": ("Add the station's mean daily pickups in the same calendar month last year", {"yoy": True}),
     "station_dow": ("Add the station's own day-of-week profile over the last 8 weeks", {"station_dow": True}),
     "holidays": ("Add US federal holiday and adjacent-day indicators", {"holidays": True}),
     "neighbour_pool": ("Add the mean last-28-day pickups of the station's 5 nearest stations", {"neighbours": True}),
@@ -41,8 +43,12 @@ MENU = {
     "censor_correct": ("Fit on latent demand: leave censored station-days out of training", {"censor": True}),
 }
 NEEDS_CENSOR_MASK = ("censor",)  # config fields that model latent demand: scorable only on masked months
-POSITIVE_CONTROL = dict(BASELINE, yoy=True)  # seasonality two months ahead: a large known effect
-PLACEBO = dict(BASELINE, noise=1)  # a pure-noise feature
+# Positive control: the baseline against a copy that cannot tell stations apart. The effect is large in every
+# month (+41 % to +77 % on real Divvy pilot months), so the protocol must detect it; a seasonal feature's effect
+# swings with the season and did not (spec §5).
+POSITIVE_CONTROL = dict(BASELINE)
+POSITIVE_CONTROL_COMPARATOR = dict(BASELINE, blind=True)
+PLACEBO = dict(BASELINE, noise=1)  # a pure-noise feature, against the baseline
 
 ROLES = ("pilot", "exploration", "confirmation", "replication", "reserve")
 FIRST_TARGET = "202201"  # leaves >= 11 months of history for year-over-year features
@@ -207,11 +213,13 @@ def _design_rows(panel, Y, e, month, view_month, g, rng):
     uni = np.flatnonzero(Y[:, max(0, e - 55) : e + 1].sum(1) > 0)
     st_mean = Y[uni, e - 27 : e + 1].mean(1)
     sys_mean = Y[:, e - 27 : e + 1].sum(0).mean()
+    if g.get("blind"):  # control comparator only: forget which station is which (every station gets the mean)
+        st_mean = np.full_like(st_mean, st_mean.mean())
     S, D = len(uni), len(dates)
     dow = np.array([d.weekday() for d in dates])
     cols = [np.log1p(np.repeat(st_mean, D)), np.full(S * D, np.log1p(sys_mean))]
     cols += [np.tile((dow == k).astype(float), S) for k in range(6)]
-    if g["yoy"]:
+    if g["yoy"] and not g.get("blind"):
         ly = _month_days(panel, month_add(month, -12))
         ly = ly[ly <= e]
         yoy = Y[uni][:, ly].mean(1) if len(ly) else st_mean

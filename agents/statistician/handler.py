@@ -119,13 +119,13 @@ def statistician_power_controls(rig, seat, task, ctx):
     p_decisive = float(min(1.0, d_sup + d_harm + d_null))
     leak = J.leak_canary(treat, pre["design"], pilot[0], cache)
 
-    def mk(t):
+    def mk(t, c=J.BASELINE):
         return sk.Preregistration(
             hid="control",
             statement="control",
             estimand="rel WAPE reduction",
             treatment=t,
-            comparator=J.BASELINE,
+            comparator=c,
             primary_metric="WAPE",
             unit="series",
             sesoi=pre["sesoi"],
@@ -136,7 +136,8 @@ def statistician_power_controls(rig, seat, task, ctx):
     def run(g):
         return J.evaluate(g, pre["design"], pilot[0], cache)
 
-    pos = sk.run_test(mk(J.POSITIVE_CONTROL), run, rng)["decision"]
+    pos_comparator = getattr(J, "POSITIVE_CONTROL_COMPARATOR", J.BASELINE)  # optional in the judge contract
+    pos = sk.run_test(mk(J.POSITIVE_CONTROL, pos_comparator), run, rng)["decision"]
     neg = sk.run_test(mk(J.PLACEBO), run, rng)["decision"]
     admissible = pos == "supported" and neg != "supported" and not leak
     # judge-specific guards the rigspec requires before lock (e.g. a censoring mask for latent-demand models)

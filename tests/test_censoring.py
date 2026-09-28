@@ -58,8 +58,8 @@ def test_planted_stockouts_and_gaps_are_censored(masked_root):
 def test_masking_removes_the_same_station_days_from_both_arms(masked_root):
     cache, panel = {}, bj.load_panel()
     base = bj.evaluate(bj.BASELINE, "A", "confirmation", cache)
-    yoy = bj.evaluate(bj.POSITIVE_CONTROL, "A", "confirmation", cache)
-    assert np.array_equal(base["actual"], yoy["actual"])  # the pair stays paired
+    other = bj.evaluate(dict(bj.BASELINE, station_dow=True), "A", "confirmation", cache)
+    assert np.array_equal(base["actual"], other["actual"])  # the pair stays paired
     j = base["origins"].index("202507")
     assert base["masked"][j] and base["censor_rate"][j] > 0
     days = [i for i, d in enumerate(panel["days"]) if d.strftime("%Y%m") == "202507"]

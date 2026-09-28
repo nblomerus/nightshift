@@ -76,14 +76,14 @@ def test_leak_canary_flags_a_peek_at_the_target_month_and_nothing_on_the_menu(da
 def test_positive_control_is_supported_and_the_placebo_is_not(data_root):
     cache, rng = {}, np.random.default_rng(0)
 
-    def locked(t):
-        return sk.Preregistration(hid="c", statement="c", estimand="e", treatment=t, comparator=bj.BASELINE,
+    def locked(t, c=bj.BASELINE):
+        return sk.Preregistration(hid="c", statement="c", estimand="e", treatment=t, comparator=c,
                                   primary_metric="WAPE", unit="station", sesoi=0.02, n_boot=300).lock()  # fmt: skip
 
     def arm(g):
         return bj.evaluate(g, "B", "confirmation", cache)
 
-    assert sk.run_test(locked(bj.POSITIVE_CONTROL), arm, rng)["decision"] == "supported"
+    assert sk.run_test(locked(bj.POSITIVE_CONTROL, bj.POSITIVE_CONTROL_COMPARATOR), arm, rng)["decision"] == "supported"
     assert sk.run_test(locked(bj.PLACEBO), arm, rng)["decision"] != "supported"
 
 

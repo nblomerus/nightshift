@@ -37,7 +37,7 @@ availability-censored observations, with a monthly forecast that is locked befor
   - raw trips, station-day aggregates and GBFS snapshots live under `data/` (gitignored), never in git;
   - test fixtures are **synthetic** files in the same schema;
   - forecasts and scores (model outputs) may be committed and published;
-  - the owner confirms that the intended public use is non-commercial before the first publication.
+  - the owner confirmed on 2026-09-28 that the intended public use (portfolio, posts) is non-commercial.
 - **Default system: Divvy.** Same code, 30× smaller downloads than Citi Bike, so a full backtest runs on a laptop.
   Citi Bike is a config switch (`system: bkn`) once the pipeline is proven.
 
@@ -100,12 +100,13 @@ Synthetic panels got fresh data from a new seed. Real data is finite, so roles a
 - Designs (rigspec): `A` = confirmation months in the last 24 months; `B` = all confirmation months.
 
 ## 6. Treatment menu (initial)
-Baseline: per-station Poisson GLM on day-of-week, the station's mean daily pickups over the last 28 published days,
-and the system's mean daily pickups over the same window.
+Baseline (owner decision 2026-09-28): a pooled Poisson GLM on day of week, the station's mean daily pickups over
+the last 28 published days and in the same calendar month last year, and the system's last-28-day mean. Two
+months ahead, a baseline without last year's level is a straw man: on real Divvy exploration months its WAPE is
+0.565, against 0.464 for the seasonal baseline.
 
 | key | change | notes |
 |---|---|---|
-| `yoy_level` | add the station's mean daily pickups in the same calendar month last year | also the positive control (large known effect) |
 | `station_dow` | station-specific day-of-week profile instead of a pooled one | |
 | `holidays` | US federal holiday and adjacent-day indicators | calendar known in advance |
 | `neighbour_pool` | shrink each station's level towards its 5 nearest stations | coordinates known at origin |
@@ -114,7 +115,11 @@ and the system's mean daily pickups over the same window.
 | `censor_correct` | fit on latent demand: drop or impute censored training station-days | `needs_censor_mask` |
 | `foundation_zero_shot` | a pretrained time-series model, zero-shot, per station | optional (item 8f), heavy dependency |
 
-Placebo: add a noise feature. Every treatment is a config change on the baseline, as in the forecast lab, until
+Positive control: the baseline against a copy blind to station identity (every station gets the mean level). On
+real Divvy pilot months its effect is +41 % to +77 % in every month (pooled +62 %, CI 54–69 %), and it is
+`supported`. The first choice, `yoy_level`, was `inconclusive` on real pilot months (+7 %, CI −5.7 % to +24.6 %)
+because a seasonal feature's effect swings with the season, so the lab would have parked every slice.
+Placebo: add a noise feature (`no_effect` on real pilot months). Every treatment is a config change on the baseline, as in the forecast lab, until
 item 5 lets seats write code.
 
 ## 7. Build plan (one PR each, in this order)
@@ -188,10 +193,16 @@ the month, which is earlier than midnight in any US time zone.
 - A zero-shot pretrained time-series model as a MENU treatment, behind an optional dependency group, run in the
   item-5 sandbox once that exists.
 
-## 8. Open decisions for the owner
-- Confirm the public use is non-commercial under the Lyft data licence (read the full agreement for the system you
-  pick).
-- Divvy or Citi Bike for the headline (default Divvy).
-- SESOI and target effect for `rigs/bikeshare-lab.json`, fixed before the first campaign.
-- Where the collector runs (this Mac under launchd, or an always-on machine). A laptop that sleeps produces
-  `unknown` days.
+## 8. Owner decisions (2026-09-28)
+- Public use is non-commercial under the Lyft data licence.
+- Divvy is the system to build and test on; availability is collected for Divvy and Citi Bike.
+- Seasonal baseline and the station-blind positive control (§6).
+- **Two-tier standards.** Backtested confirmatory tests promote a champion at SESOI 10 % (target effect 15 %):
+  about 11 monthly origins per role cannot resolve less. Public claims rest on the monthly prospective scores,
+  pooled over every scored month (two-way bootstrap over stations × months) and decided by the kernel at SESOI
+  2 % (`decision_standards.prospective`). No scored month can be left out of the pool.
+- The collectors run on this Mac under launchd. A Mac that sleeps produces `unknown` days.
+- **First screen on real exploration months, seasonal baseline:** `station_dow` +0.5 %, `holidays` +0.4 %,
+  `neighbour_pool` +0.1 %, `system_trend` −2.6 %, `tweedie_loss` −10.6 %. None is near the 10 % backtest SESOI,
+  so the first campaigns should expect `no_effect` or `inconclusive` decisions. That is what the lab should
+  report.

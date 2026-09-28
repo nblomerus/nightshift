@@ -300,11 +300,11 @@
   "queue": "an owned task (pending -> claimed -> done | parked); the only way work is assigned"
  },
  "decision_standards": {
-  "sesoi": 0.02,
-  "target_effect": 0.05,
+  "sesoi": 0.1,
+  "target_effect": 0.15,
   "alpha_campaign": 0.05,
   "power_min": 0.8,
-  "set_by": "PROPOSAL (docs/specs/bikeshare.md \u00a78): the owner fixes these before the first real campaign; no seat may change them",
+  "set_by": "owner, 2026-09-28, before any bike-share hypothesis was drafted; no seat may change them",
   "alpha_rule": "Bonferroni: alpha_campaign / number of planned confirmatory tests, reserved at lock",
   "power_rule": "P(decisive result: supported, harmful or no_effect) >= 0.8 at the pilot effect estimate from pilot panels that are never reused; power at the target effect is reported alongside",
   "leak_rule": "treatment must pass the judge's leak canary before lock",
@@ -313,6 +313,12 @@
    "min_coverage": 0.9,
    "month_coverage": 0.9,
    "rule": "a station-day is censored if renting with no bike for >= empty_minutes, unknown if fewer than min_coverage of the day's polls saw it; both are excluded from scoring in months with snapshots on >= month_coverage of days"
+  },
+  "tiers": "Backtests (this rig's confirmatory tests) promote a champion only at SESOI 10 %: about 11 monthly origins per role cannot resolve less. Public claims rest on the monthly prospective scores (ops/prospective.py), pooled across scored months and decided at the prospective SESOI.",
+  "prospective": {
+   "sesoi": 0.02,
+   "alpha": 0.05,
+   "rule": "pooled two-way bootstrap over stations x scored months, champion vs the baseline locked with it; kernel decide() at this SESOI"
   }
  }
 }
