@@ -1,0 +1,311 @@
+{
+ "rig": "bikeshare-lab",
+ "mission": "Improve the two-month-ahead forecast of daily pickups at each bike-share station, measured by station-day WAPE on availability-censored data, against the current champion model.",
+ "judge": "judges.bikeshare",
+ "judge_config": {
+  "root": "data/bikeshare/chi"
+ },
+ "seats": {
+  "pi@bikeshare-lab": {
+   "role": "pi",
+   "kind": "llm",
+   "tier": "reasoning",
+   "owns": "the mission, the agenda, what to test next"
+  },
+  "methodologist@bikeshare-lab": {
+   "role": "methodologist",
+   "kind": "llm",
+   "tier": "reasoning",
+   "owns": "preregistrations: estimand, comparator, SESOI, design"
+  },
+  "critic@bikeshare-lab": {
+   "role": "critic",
+   "kind": "llm",
+   "tier": "reasoning",
+   "owns": "design review BEFORE data (registered-report stage 1)"
+  },
+  "statistician@bikeshare-lab": {
+   "role": "statistician",
+   "kind": "code",
+   "tier": null,
+   "owns": "power, controls, lock, analysis, FDR ledger \u2014 deterministic, no LLM"
+  },
+  "experimenter@bikeshare-lab": {
+   "role": "experimenter",
+   "kind": "llm",
+   "tier": "utility",
+   "owns": "implementing the treatment arm and running it under the frozen judge"
+  },
+  "replicator@bikeshare-lab": {
+   "role": "replicator",
+   "kind": "llm",
+   "tier": "utility",
+   "owns": "independent re-implementation from the prereg TEXT only, on fresh data"
+  },
+  "writer@bikeshare-lab": {
+   "role": "writer",
+   "kind": "llm",
+   "tier": "reasoning",
+   "owns": "the write-up; cannot change a decision"
+  }
+ },
+ "workflow": {
+  "stages": [
+   "question",
+   "hypothesis",
+   "prereg_draft",
+   "design_review",
+   "approved_design",
+   "implementation_checked",
+   "controls_passed",
+   "locked",
+   "run",
+   "analysed",
+   "replication_queued",
+   "replicated",
+   "not_replicated",
+   "written",
+   "parked"
+  ],
+  "transitions": [
+   {
+    "from": "question",
+    "to": "hypothesis",
+    "by": [
+     "pi"
+    ],
+    "requires": []
+   },
+   {
+    "from": "hypothesis",
+    "to": "prereg_draft",
+    "by": [
+     "methodologist"
+    ],
+    "requires": [
+     "prereg_fields"
+    ]
+   },
+   {
+    "from": "prereg_draft",
+    "to": "design_review",
+    "by": [
+     "methodologist"
+    ],
+    "requires": []
+   },
+   {
+    "from": "design_review",
+    "to": "prereg_draft",
+    "by": [
+     "critic",
+     "statistician"
+    ],
+    "requires": []
+   },
+   {
+    "from": "design_review",
+    "to": "approved_design",
+    "by": [
+     "critic"
+    ],
+    "requires": []
+   },
+   {
+    "from": "controls_passed",
+    "to": "locked",
+    "by": [
+     "statistician"
+    ],
+    "requires": [
+     "prereg_digest"
+    ]
+   },
+   {
+    "from": "locked",
+    "to": "run",
+    "by": [
+     "experimenter"
+    ],
+    "requires": [
+     "digest_matches",
+     "judge_result",
+     "judge_unchanged"
+    ]
+   },
+   {
+    "from": "run",
+    "to": "analysed",
+    "by": [
+     "statistician"
+    ],
+    "requires": [
+     "kernel_decision",
+     "judge_unchanged"
+    ]
+   },
+   {
+    "from": "analysed",
+    "to": "replicated",
+    "by": [
+     "replicator"
+    ],
+    "requires": [
+     "independent_seat",
+     "same_digest",
+     "fresh_data",
+     "judge_unchanged"
+    ]
+   },
+   {
+    "from": "analysed",
+    "to": "not_replicated",
+    "by": [
+     "replicator"
+    ],
+    "requires": [
+     "independent_seat",
+     "same_digest",
+     "fresh_data",
+     "judge_unchanged"
+    ]
+   },
+   {
+    "from": "written",
+    "to": "replication_queued",
+    "by": [
+     "statistician"
+    ],
+    "requires": [
+     "grade_b_supported",
+     "tested_on_current_champion",
+     "under_replication_cap"
+    ]
+   },
+   {
+    "from": "replication_queued",
+    "to": "replicated",
+    "by": [
+     "replicator"
+    ],
+    "requires": [
+     "independent_seat",
+     "same_digest",
+     "fresh_data",
+     "judge_unchanged"
+    ]
+   },
+   {
+    "from": "replication_queued",
+    "to": "not_replicated",
+    "by": [
+     "replicator"
+    ],
+    "requires": [
+     "independent_seat",
+     "same_digest",
+     "fresh_data",
+     "judge_unchanged"
+    ]
+   },
+   {
+    "from": "analysed",
+    "to": "written",
+    "by": [
+     "writer"
+    ],
+    "requires": [
+     "decision_not_supported"
+    ]
+   },
+   {
+    "from": "replicated",
+    "to": "written",
+    "by": [
+     "writer"
+    ],
+    "requires": []
+   },
+   {
+    "from": "not_replicated",
+    "to": "written",
+    "by": [
+     "writer"
+    ],
+    "requires": []
+   },
+   {
+    "from": "approved_design",
+    "to": "implementation_checked",
+    "by": [
+     "experimenter"
+    ],
+    "requires": [
+     "implementable_exactly",
+     "statement_from_config"
+    ]
+   },
+   {
+    "from": "approved_design",
+    "to": "prereg_draft",
+    "by": [
+     "experimenter"
+    ],
+    "requires": []
+   },
+   {
+    "from": "implementation_checked",
+    "to": "controls_passed",
+    "by": [
+     "statistician"
+    ],
+    "requires": [
+     "p_decisive>=0.8",
+     "controls_admissible"
+    ]
+   },
+   {
+    "from": "implementation_checked",
+    "to": "prereg_draft",
+    "by": [
+     "statistician"
+    ],
+    "requires": []
+   },
+   {
+    "from": "implementation_checked",
+    "to": "parked",
+    "by": [
+     "statistician"
+    ],
+    "requires": [
+     "no_larger_design"
+    ]
+   },
+   {
+    "from": "prereg_draft",
+    "to": "parked",
+    "by": [
+     "methodologist"
+    ],
+    "requires": [
+     "revision_cap_reached"
+    ]
+   }
+  ]
+ },
+ "comms": {
+  "send": "a question or answer between seats; never changes state and never creates work",
+  "queue": "an owned task (pending -> claimed -> done | parked); the only way work is assigned"
+ },
+ "decision_standards": {
+  "sesoi": 0.02,
+  "target_effect": 0.05,
+  "alpha_campaign": 0.05,
+  "power_min": 0.8,
+  "set_by": "PROPOSAL (docs/specs/bikeshare.md \u00a78): the owner fixes these before the first real campaign; no seat may change them",
+  "alpha_rule": "Bonferroni: alpha_campaign / number of planned confirmatory tests, reserved at lock",
+  "power_rule": "P(decisive result: supported, harmful or no_effect) >= 0.8 at the pilot effect estimate from pilot panels that are never reused; power at the target effect is reported alongside",
+  "leak_rule": "treatment must pass the judge's leak canary before lock"
+ }
+}

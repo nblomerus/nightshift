@@ -17,6 +17,7 @@ TARGET
     calibrate                  Lab self-calibration benchmark (planted-truth hypotheses, ~3 min)
     protocols                  Promotion-protocol benchmark (ratchet vs gates, ~4 min)
     collect                    Poll bike-share GBFS availability every 5 min into data/gbfs (SYSTEM=chi|bkn)
+    ingest                     Download and aggregate bike-share trip months into data/bikeshare (SYSTEM=chi|bkn)
     clean                      Remove caches and __pycache__ dirs
 
 See README.md for setup.
@@ -73,7 +74,7 @@ install:
 pre-commit:
 	pre-commit install
 
-.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols collect clean
+.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols collect ingest clean
 
 # Non-mutating lint + format check — mirrors the CI `lint` job. Use `make ruff` to autofix.
 check:
@@ -111,6 +112,9 @@ calibrate:
 
 protocols:
 	$(VENV_PYTHON) -m eval.promotion_protocols
+
+ingest:
+	$(VENV_PYTHON) -m ops.bikeshare_ingest --system $(SYSTEM)
 
 collect:
 	$(VENV_PYTHON) -m ops.gbfs_collect --system $(SYSTEM) --every 300

@@ -39,7 +39,7 @@ def methodologist_draft(rig, seat, task, ctx):
         f"Decision standards are FIXED by the PI and not yours to set: SESOI {std['sesoi']:.1%} relative "
         f"WAPE reduction; target effect for 80% power {std['target_effect']:.1%}; alpha per test "
         f"{ctx['alpha_per_test']:.3f}.\n"
-        "Estimand: relative reduction in WAPE of the next-4-week unit sum, treatment vs comparator, "
+        f"Estimand: relative reduction in {J.TARGET}, treatment vs comparator, "
         "resampling series AND rolling origins (two-way bootstrap).\n"
         f"Available designs:\n{designs}\n"
         + (f"\nPrevious draft:\n{json.dumps(prev)}\nFeedback to address:\n{feedback}\n" if prev else "")
