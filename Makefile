@@ -10,7 +10,7 @@ TARGET
     ruff                       Autofix imports + format (ruff)
     test / tests               Run the test suite (offline: fake LLM, no network, no DB)
     test-last-fail             Re-run the tests that failed last time
-    rig                        Run campaigns against LLM_BASE_URL (CAMPAIGNS=3 RUN=runs/latest)
+    rig                        Run campaigns against LLM_BASE_URL (CAMPAIGNS=3 RUN=runs/latest RIGSPEC=rigs/...)
     demo                       Run campaigns offline with the deterministic fake LLM (RUN=runs/demo)
     floor                      Live lab-floor dashboard on :$$FLOOR_PORT for RUN (default runs/latest)
     replay                     Build a self-contained replay page for RUN
@@ -47,6 +47,7 @@ FLOOR_PORT     ?= 8765
 RUN            ?= runs/latest
 CAMPAIGNS      ?= 3
 SYSTEM         ?= chi
+RIGSPEC        ?=
 
 # Repo root on the import path for `python -m ...` (top-level packages, no install step).
 export PYTHONPATH := $(CURDIR)
@@ -99,10 +100,10 @@ test-last-fail:
 # ---------------------- The lab ----------------------
 
 rig:
-	$(VENV_PYTHON) -m ops.nightshift run --campaigns $(CAMPAIGNS) --root $(RUN)
+	$(VENV_PYTHON) -m ops.nightshift run --campaigns $(CAMPAIGNS) --root $(RUN) $(if $(RIGSPEC),--rigspec $(RIGSPEC))
 
 demo:
-	$(VENV_PYTHON) -m ops.nightshift run --fake-llm --campaigns 2 --root $(if $(filter runs/latest,$(RUN)),runs/demo,$(RUN))
+	$(VENV_PYTHON) -m ops.nightshift run --fake-llm --campaigns 2 --root $(if $(filter runs/latest,$(RUN)),runs/demo,$(RUN)) $(if $(RIGSPEC),--rigspec $(RIGSPEC))
 
 floor:
 	$(VENV_PYTHON) -m ops.nightshift floor serve $(RUN) --port $(FLOOR_PORT)
