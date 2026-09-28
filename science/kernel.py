@@ -45,6 +45,7 @@ class Preregistration:
     n_boot: int = 2000
     design: dict = dc.field(default_factory=dict)  # origins, data slice, seeds — fixed up front
     kills_if: str = ""  # what result would make the PI drop the direction
+    judge_digest: str = ""  # SHA-256 of the frozen judge's source at lock; results must be produced by it
     locked_at: float = 0.0
     digest: str = ""
 

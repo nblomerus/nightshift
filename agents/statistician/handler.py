@@ -17,6 +17,8 @@ from agents.common import (
     audit_locked,
     describe_config,
     evaluate_arm,
+    judge_digest,
+    require_judge,
     slice_grade,
     slice_seed,
 )
@@ -224,6 +226,7 @@ def statistician_power_controls(rig, seat, task, ctx):
         n_boot=1000,
         design=dict(name=pre["design"], T=d["T"], origins=d["origins"], bootstrap="two_way"),
         kills_if=pre["kills_if"],
+        judge_digest=judge_digest(),
     ).lock()
     rig.proof(sid, "prereg_locked.json", dict(body=locked._body(), digest=locked.digest, locked_at=locked.locked_at))
     ctx["locked"][sid] = locked
@@ -236,14 +239,21 @@ def statistician_analyse(rig, seat, task, ctx):
     sid = task["slice"]
     pre, res = ctx["locked"][sid], rig.read_proof(sid, "run_result.json")
     audit_locked(rig, sid, pre, seat, "analysis")
+    judge = require_judge(rig, seat, sid, pre, "analysed", {"kernel_decision": False})
     rng = np.random.default_rng(1)
     alpha = pre.alpha  # reserved at lock (campaign Bonferroni)
     est = sk.paired_effect(np.array(res["err_t"]), np.array(res["err_c"]), alpha, pre.n_boot, rng)
     dec = sk.decide(est, pre.sesoi)
     ctx["ledger_rows"].append(dict(slice=sid, digest=pre.digest[:12], alpha=alpha, decision=dec, **est))
-    out = dict(alpha=alpha, **est, decision=dec, sesoi=pre.sesoi, digest=pre.digest)
+    out = dict(alpha=alpha, **est, decision=dec, sesoi=pre.sesoi, digest=pre.digest, judge_digest=judge)
     rig.proof(sid, "decision.json", out)
-    rig.advance(seat, sid, "analysed", checks={"kernel_decision": True}, note=f"{dec} (alpha {alpha:.4f})")
+    rig.advance(
+        seat,
+        sid,
+        "analysed",
+        checks={"kernel_decision": True, "judge_unchanged": judge == pre.judge_digest},
+        note=f"{dec} (alpha {alpha:.4f})",
+    )
     nxt = ("replicator", "replicate") if dec == "supported" else ("writer", "write")
     rig.queue(seat, rig.seat_for(nxt[0]), nxt[1], sid, dict(decision=dec))
     return out
