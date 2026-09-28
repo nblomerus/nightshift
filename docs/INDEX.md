@@ -4,6 +4,7 @@
 - [CONVENTIONS.md](CONVENTIONS.md) — lab-foundry project structure and pyenv workflow, as used here
 - [program.md](program.md) — template for the human-owned research directive (autoresearch-style)
 - [../ROADMAP.md](../ROADMAP.md) — next PRs with acceptance criteria
+- [specs/bikeshare.md](specs/bikeshare.md) — ROADMAP item 8: real-data bike-share judge, censoring, prospective lock
 - [../AGENTS.md](../AGENTS.md) — brief and invariants for coding agents
 
 ## Background (how the design was reached; paths refer to the earlier prototype)

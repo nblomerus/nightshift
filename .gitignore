@@ -13,3 +13,6 @@ htmlcov/
 
 # Run output (examples/ holds the recorded runs worth keeping)
 runs/
+
+# Operator data: the licence forbids redistribution (docs/specs/bikeshare.md)
+data/
