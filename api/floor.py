@@ -14,9 +14,12 @@ import glob
 import json
 import os
 import sqlite3
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+from api.replay import build_replay, list_runs
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FLOOR_HTML = os.path.join(REPO_ROOT, "web", "floor.html")
@@ -122,8 +125,52 @@ def build_static(root, out):
 class Handler(BaseHTTPRequestHandler):
     root = "rig_run"
 
+    def _run_root(self, q):
+        """The served run, or a sibling run named by ?run= (a bare directory name, never a path)."""
+        name = os.path.basename(q.get("run", [""])[0])
+        root = os.path.join(os.path.dirname(os.path.abspath(self.root)), name) if name else self.root
+        return root if os.path.exists(os.path.join(root, "rig.db")) else None
+
+    def _json(self, obj, status=200):
+        body = json.dumps(obj, default=str).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _events(self, root):
+        """Server-sent events: a full replay snapshot whenever the run's records change (live mode)."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        stamp = None
+        try:
+            while True:
+                files = [os.path.join(root, f) for f in ("rig.db", "llm_calls.jsonl", "ledger.json")]
+                now = tuple(os.path.getmtime(f) if os.path.exists(f) else 0 for f in files)
+                if now != stamp:
+                    stamp = now
+                    data = json.dumps(build_replay(root), default=str)
+                    self.wfile.write(f"event: replay\ndata: {data}\n\n".encode())
+                else:
+                    self.wfile.write(b": ping\n\n")
+                self.wfile.flush()
+                time.sleep(1.0)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
     def do_GET(self):
         u = urlparse(self.path)
+        q = parse_qs(u.query)
+        if u.path == "/api/runs":
+            return self._json(list_runs(os.path.dirname(os.path.abspath(self.root))))
+        if u.path in ("/api/replay", "/api/events"):
+            root = self._run_root(q)
+            if root is None:
+                return self._json({"error": "no such run"}, 404)
+            return self._json(build_replay(root)) if u.path == "/api/replay" else self._events(root)
         if u.path == "/api/state":
             since = float(parse_qs(u.query).get("since", ["0"])[0])
             body, ctype = json.dumps(build_state(self.root, since), default=str).encode(), "application/json"
