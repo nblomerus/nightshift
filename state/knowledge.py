@@ -81,12 +81,13 @@ class Knowledge:
 
     def test(self, run: str, campaign: int, sid: str, *, change: str, change_desc: str, treatment: dict, comparator: dict,
              comparator_desc: str, judge: str, data_key, design: str, decision: dict | None, grade: str | None,
-             stage: str, reason: str = "", prereg: str = ""):  # fmt: skip
+             stage: str, reason: str = "", prereg: str = "", evaluation: str = ""):  # fmt: skip
         """One slice: tested (decision, grade) or stopped before a decision (stage parked, reason)."""
         tid = f"test:{run}:{sid}"
         seen = self.props(tid) is not None
         self.node(tid, "test", sid, rig=self.rig, treatment=config_id(treatment), decision=decision, grade=grade,
-                  stage=stage, reason=reason, design=design, judge=judge, data=str(data_key), prereg=prereg)  # fmt: skip
+                  stage=stage, reason=reason, design=design, judge=judge, data=str(data_key), prereg=prereg,
+                  evaluation=evaluation or judge)  # fmt: skip
         if seen:
             self.commit()
             return tid
@@ -155,12 +156,13 @@ class Knowledge:
             )
         return out
 
-    def is_repeat(self, treatment: dict, comparator: dict, judge: str, data_key) -> bool:
-        """A decided test with the same treatment, comparator, judge (code + data) and data already exists: running
-        it again scores the same data under the same rule and can only reproduce the answer."""
+    def is_repeat(self, treatment: dict, comparator: dict, evaluation: str, data_key) -> bool:
+        """A decided test with the same treatment, comparator, evaluation (the judge's scoring semantics and data; the
+        full judge digest for judges that do not declare one) and data already exists: running it again scores the same
+        data under the same rule and can only reproduce the answer."""
         return any(
             t["treatment"] == config_id(treatment)
-            and t["judge"] == judge
+            and t.get("evaluation", t["judge"]) == evaluation
             and t["data"] == str(data_key)
             and t["decision"]
             for t in self.tests(comparator)

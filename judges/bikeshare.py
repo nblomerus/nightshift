@@ -18,11 +18,14 @@ from __future__ import annotations
 
 import datetime as dt
 import gzip
+import hashlib
 import json
 import os
 
 import numpy as np
 import pandas as pd
+
+from judges.sandbox import SandboxError, run_plugin
 
 NAME = "bikeshare"
 TARGET = "station-day pickup WAPE two months ahead"
@@ -95,7 +98,8 @@ def configure(config, standards=None):
     manifest = os.path.join(CONFIG["root"], "manifest.json")
     censor = os.path.join(CONFIG["root"], "censor_day.csv.gz")
     # the data manifest and the censoring table are locked into every prereg with the code
-    globals()["FILES"] = (__file__, manifest) + ((censor,) if os.path.exists(censor) else ())
+    sandbox = os.path.join(os.path.dirname(__file__), "sandbox.py")
+    globals()["FILES"] = (__file__, sandbox, manifest) + ((censor,) if os.path.exists(censor) else ())
     targets = target_months(load_panel())
     recent = targets[-24:]
     conf_all = [m for m in targets if role(m) == "confirmation"]
@@ -273,11 +277,97 @@ def _fit_glm(X, y, power, ridge=1e-3, iters=25):
     return lambda Xn: np.exp(np.clip(np.column_stack([np.ones(len(Xn)), (Xn - mu_x) / sd_x]) @ beta, -20, 20))
 
 
+# ---------------------------------------------------------------------------- seat-written features (ROADMAP 5)
+EVAL_VERSION = "2026-09-29.1"  # bump when the scoring of an existing config changes; not for new capabilities
+HISTORY_DAYS = 400
+
+CODE_CONTRACT = """Write Python defining features(view) -> numpy array; numpy is available, nothing else is needed.
+It runs sandboxed (no network, no files, no subprocesses, bounded time). view is a dict of numpy arrays, for ONE
+forecast origin, holding only data published by then:
+  n_stations, n_days: ints (0-d arrays)
+  history: float32 [n_stations, H] daily docked pickups of each station for the H days up to the origin (H <= 400)
+  history_dates: int [H] the day of each history column as a proleptic Gregorian ordinal
+                 (datetime.date.fromordinal); the last one is the last day with published data
+  target_dates: int [n_days] the days to forecast (ordinals), about 32-62 days after the last history day
+  lat, lon: float [n_stations] station coordinates
+Return shape (n_stations * n_days,) or (n_stations * n_days, k) with k <= 8, rows ordered station-major (all target days
+of station 0, then station 1, ...), finite values. The frozen judge adds the columns to the champion's pooled log-link
+GLM (standardised), fits on the 12 previous target months, and scores the forecast month. The same function must work
+for every origin, so derive everything from the view; it must be deterministic."""
+
+
+def evaluation_key():
+    """What a result depends on besides the config: the scoring semantics and the data. Knowledge-graph repeats key on
+    this, so upgrading the judge's capabilities does not re-open decided tests; the lock still stamps the full digest."""
+    h = hashlib.sha256(EVAL_VERSION.encode())
+    for path in FILES[2:]:  # the data files
+        with open(path, "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()
+
+
+def _plugin_view(panel, Y, e, uni, month, view_month):
+    dates = month_dates(month)
+    lo = max(0, e - HISTORY_DAYS + 1)
+    xy = panel["coords"][view_month].reindex([panel["stations"][i] for i in uni])
+    xy = xy.fillna(xy.mean())
+    return dict(
+        n_rows=np.array(len(uni) * len(dates)),
+        n_stations=np.array(len(uni)),
+        n_days=np.array(len(dates)),
+        history=Y[uni, lo : e + 1].astype(np.float32),
+        history_dates=np.array([panel["days"][d].toordinal() for d in range(lo, e + 1)]),
+        target_dates=np.array([d.toordinal() for d in dates]),
+        lat=xy["lat"].to_numpy(dtype=float),
+        lon=xy["lon"].to_numpy(dtype=float),
+    )
+
+
+def _with_code(g, rows, timeout=180.0):
+    """Append every seat-written feature to its rows' design matrices: one sandboxed process per plugin."""
+    code = g.get("code") or []
+    if not code:
+        return [X for X, _ in rows]
+    views = [v for _, v in rows]
+    extra = [run_plugin(item["source"], views, timeout=timeout) for item in code]
+    return [np.column_stack([X] + [cols[i] for cols in extra]) for i, (X, _) in enumerate(rows)]
+
+
+def check_code(source, repeats=2):
+    """Deterministic checks before a seat's code can be locked: it runs in the sandbox on real point-in-time views,
+    returns usable columns, and returns the same columns every time."""
+    import time
+
+    panel = load_panel()
+    month = target_months(panel)[-1]
+    _, e, view_month = origin(panel, month)
+    X, uni = _design_rows(panel, panel["Y"], e, month, view_month, BASELINE, np.random.default_rng(0))
+    views = [_plugin_view(panel, panel["Y"], e, uni, month, view_month)]
+    tm = month_add(month, -2)
+    te = int(_month_days(panel, month_add(tm, -2)).max())
+    _, uni2 = _design_rows(panel, panel["Y"], te, tm, month_add(tm, -2), BASELINE, np.random.default_rng(0))
+    views.append(_plugin_view(panel, panel["Y"], te, uni2, tm, month_add(tm, -2)))
+    outs, t0 = [], time.time()
+    try:
+        for _ in range(repeats):
+            outs.append(run_plugin(source, views))
+    except SandboxError as err:
+        return dict(ok=False, deterministic=False, seconds=round(time.time() - t0, 1), error=str(err), columns=0)
+    same = all(np.array_equal(a, b) for run in outs[1:] for a, b in zip(outs[0], run, strict=True))
+    varies = any(float(np.std(a)) > 0 for a in outs[0])
+    error = (
+        "" if same and varies else "different output on a second run" if not same else "constant output: no information"
+    )
+    cols = int(outs[0][0].shape[1])
+    return dict(ok=same and varies, deterministic=same, seconds=round(time.time() - t0, 1), error=error, columns=cols)
+
+
 def predict_month(panel, Y, month, g):
     """Forecast target `month` as of its origin, from Y. Returns (station indices, dates, predictions)."""
     as_of, e, view_month = origin(panel, month)
     rng = np.random.default_rng(int(month))
-    Xs, ys = [], []
+    code = bool(g.get("code"))
+    rows, ys = [], []
     for k in range(2, 2 + TRAIN_MONTHS):  # training targets: months M-2 .. M-13, all visible at as_of
         tm = month_add(month, -k)
         tdays = _month_days(panel, tm)
@@ -288,14 +378,18 @@ def predict_month(panel, Y, month, g):
             continue
         X, uni = _design_rows(panel, Y, te, tm, month_add(tm, -2), g, rng)
         y = Y[np.ix_(uni, tdays)].reshape(-1)
+        keep = np.ones(len(y), bool)
         if g.get("censor") and masked(panel, tm):  # latent demand: censored days say nothing about it
             keep = panel["C"][np.ix_(uni, tdays)].reshape(-1) == OK
-            X, y = X[keep], y[keep]
-        Xs.append(X)
-        ys.append(y)
-    model = _fit_glm(np.vstack(Xs), np.concatenate(ys), 1.5 if g["tweedie"] else 1.0)
+        rows.append((X, _plugin_view(panel, Y, te, uni, tm, month_add(tm, -2)) if code else None))
+        ys.append((y, keep))
     X, uni = _design_rows(panel, Y, e, month, view_month, g, rng)
-    return uni, month_dates(month), model(X).reshape(len(uni), -1)
+    rows.append((X, _plugin_view(panel, Y, e, uni, month, view_month) if code else None))
+    mats = _with_code(g, rows)
+    Xtrain = np.vstack([m[k] for m, (_, k) in zip(mats[:-1], ys, strict=True)])
+    ytrain = np.concatenate([y[k] for y, k in ys])
+    model = _fit_glm(Xtrain, ytrain, 1.5 if g["tweedie"] else 1.0)
+    return uni, month_dates(month), model(mats[-1]).reshape(len(uni), -1)
 
 
 # ---------------------------------------------------------------------------- the lab contract

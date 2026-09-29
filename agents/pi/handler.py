@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agents.common import ask_json, judge_digest, persona
+from agents.common import ask_json, evaluation_key, persona
 
 
 # ---------------------------------------------------------------------------- PI
@@ -20,7 +20,7 @@ def pi_plan(rig, seat, task, ctx):
     # offered again. Re-running it scores the same numbers under the same rule and can only reproduce the answer.
     unavailable = []
     if kg is not None:
-        digest, data_key = judge_digest(J), J.data_keys("primary", ctx["campaign"], 0)[0]
+        digest, data_key = evaluation_key(J), J.data_keys("primary", ctx["campaign"], 0)[0]
         unavailable = [
             k for k, v in menu.items() if kg.is_repeat(dict(ctx["champion"], **v[1]), ctx["champion"], digest, data_key)
         ]

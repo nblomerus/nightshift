@@ -185,6 +185,7 @@ def record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_b
         pre = ctx["locked"][e["slice"]]
         kg.test(run, k, e["slice"], change=e["key"], change_desc=J.MENU[e["key"]][0], treatment=pre.treatment,
                 comparator=pre.comparator, comparator_desc=S.describe_config(J, pre.comparator), judge=pre.judge_digest,
+            evaluation=S.evaluation_key(J),
                 data_key=ctx["primary_seed"][e["slice"]], design=pre.design["name"],
                 decision=dict(decision=e["decision"], point=e["point"], lo=e["lo"], hi=e["hi"]), grade=e["grade"],
                 stage="written", prereg=pre.digest)  # fmt: skip
@@ -220,6 +221,7 @@ def record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_b
             comparator=champion_before,
             comparator_desc=S.describe_config(J, champion_before),
             judge=S.judge_digest(J),
+            evaluation=S.evaluation_key(J),
             data_key=ctx["primary_seed"].get(sid),
             design=draft.get("design", ""),
             decision=None,
