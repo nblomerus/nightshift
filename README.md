@@ -54,7 +54,7 @@ rigspec before any hypothesis exists; no seat can change them.
 
 **Feedback loops:** in-slice revision (critic / experimenter / statistician → methodologist), campaigns (exploratory
 screen → PI plans → tests → the champion changes **only** on a replicated grade-A result), learning (evidence ledger,
-variance book, lessons carried forward), replication (a supported grade-B result gets one more attempt next campaign).
+variance book, lessons carried forward, and a knowledge graph of every run that the PI plans from), replication (a supported grade-B result gets one more attempt next campaign).
 
 ## Evidence that the design matters
 Synthetic benchmarks in [eval/](eval/) (full write-ups in [docs/background/](docs/background/)):

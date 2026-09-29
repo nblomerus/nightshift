@@ -19,3 +19,6 @@ data/
 
 # Design source archives (the unpacked pack lives in docs/design/)
 assets/
+
+# The lab's knowledge graph (per rig; derived from runs on licensed data)
+knowledge/

@@ -43,7 +43,9 @@ def methodologist_draft(rig, seat, task, ctx):
         "resampling series AND rolling origins (two-way bootstrap).\n"
         f"Available designs:\n{designs}\n"
         + (f"\nPrevious draft:\n{json.dumps(prev)}\nFeedback to address:\n{feedback}\n" if prev else "")
-        + "\nFields: design ('A' or 'B'), kills_if (result that would drop the idea), rationale. "
+        + "\nFields: design ('A' or 'B'), kills_if (the result that would make the PI drop this direction, in plain "
+        "words, e.g. 'no effect or harmful on the confirmation months'; the decision rule itself is fixed and generated, "
+        "so do NOT restate, tighten or re-derive it here), rationale. "
         "Reply with ONE JSON object with exactly these keys.",
     )
     pre = {k: out.get(k) for k in LLM_PREREG_KEYS}
