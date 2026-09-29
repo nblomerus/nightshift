@@ -68,6 +68,12 @@ def judge_digest(judge):
     return h.hexdigest()
 
 
+def evaluation_key(judge):
+    """What a result depends on besides its config: the judge's declared evaluation key (scoring semantics + data), or
+    its full digest. Used only to recognise repeats when planning; locks always stamp the full digest."""
+    return judge.evaluation_key() if hasattr(judge, "evaluation_key") else judge_digest(judge)
+
+
 def require_judge(rig, seat, sid, pre, to_stage, checks, judge):
     """Before the judge runs: if its source changed since lock, refuse `to_stage` through the rig (logged)."""
     now = judge_digest(judge)
@@ -100,13 +106,20 @@ def describe_config(judge, config):
     """Plain-language description of a machine config: the baseline plus every MENU change it contains.
     Refuses a config that is not the baseline plus MENU changes, rather than describing it wrongly."""
     menu = judge.MENU
+    code = config.get("code") or []
+    config = {k: v for k, v in config.items() if k != "code"}
     keys = [k for k, (_, p) in menu.items() if all(config.get(f) == v for f, v in p.items())]
     rebuilt = dict(judge.BASELINE)
     for k in keys:
         rebuilt.update(menu[k][1])
     if rebuilt != config:
         raise ValueError(f"config is not the baseline plus menu changes: {config}")
-    return " + ".join([judge.BASELINE_DESC] + [menu[k][0].lower() for k in keys])
+    parts = [judge.BASELINE_DESC] + [menu[k][0].lower() for k in keys]
+    parts += [
+        f"seat-written feature '{c['name']}' (code sha {hashlib.sha256(c['source'].encode()).hexdigest()[:12]})"
+        for c in code
+    ]
+    return " + ".join(parts)
 
 
 def decision_clause(std, alpha):

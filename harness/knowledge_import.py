@@ -9,7 +9,7 @@ import json
 import os
 import sqlite3
 
-from agents.common import describe_config, judge_digest
+from agents.common import describe_config, evaluation_key, judge_digest
 
 
 def _read(path):
@@ -47,6 +47,7 @@ def import_run(kg, root, judge):
                 comparator=body["comparator"],
                 comparator_desc=e["champion"],
                 judge=body.get("judge_digest", ""),
+                evaluation=evaluation_key(judge),  # assumes the data has not changed since the run
                 data_key=res.get("seed"),
                 design=body["design"].get("name", ""),
                 decision=dict(decision=e["decision"], point=e["point"], lo=e["lo"], hi=e["hi"]),
@@ -73,6 +74,7 @@ def import_run(kg, root, judge):
                 comparator=champion,
                 comparator_desc=describe_config(judge, champion),
                 judge=judge_digest(judge),
+                evaluation=evaluation_key(judge),
                 data_key=None,
                 design=draft.get("design", ""),
                 decision=None,
