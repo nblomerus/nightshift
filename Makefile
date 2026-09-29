@@ -12,7 +12,10 @@ TARGET
     test-last-fail             Re-run the tests that failed last time
     rig                        Run campaigns against LLM_BASE_URL (CAMPAIGNS=3 RUN=runs/latest RIGSPEC=rigs/...)
     demo                       Run campaigns offline with the deterministic fake LLM (RUN=runs/demo)
-    floor                      Live lab-floor dashboard on :$$FLOOR_PORT for RUN (default runs/latest)
+    floor                      Lab-floor API + legacy page on :$$FLOOR_PORT for RUN (default runs/latest)
+    ui-install                 Install the lab UI's Node dependencies (ui/, Node >= 20)
+    ui                         The lab UI (Next.js) on :$$UI_PORT; needs make floor running
+    ui-check                   Lint, typecheck, test and build the lab UI (CI parity)
     replay                     Build a self-contained replay page for RUN
     calibrate                  Lab self-calibration benchmark (planted-truth hypotheses, ~3 min)
     protocols                  Promotion-protocol benchmark (ratchet vs gates, ~4 min)
@@ -43,7 +46,8 @@ endif
 PYTHON_VERSION  = 3.11
 PYENV_NAME      = nightshift
 
-FLOOR_PORT     ?= 8765
+FLOOR_PORT     ?= 18765
+UI_PORT        ?= 18088
 RUN            ?= runs/latest
 CAMPAIGNS      ?= 3
 SYSTEM         ?= chi
@@ -78,7 +82,7 @@ install:
 pre-commit:
 	pre-commit install
 
-.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols collect ingest censor lock-month score-month clean
+.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols collect ingest censor lock-month score-month ui-install ui ui-check clean
 
 # Non-mutating lint + format check — mirrors the CI `lint` job. Use `make ruff` to autofix.
 check:
@@ -131,6 +135,15 @@ censor:
 
 collect:
 	$(VENV_PYTHON) -m ops.gbfs_collect --system $(SYSTEM) --every 300
+
+ui-install:
+	cd ui && npm ci
+
+ui:
+	cd ui && NIGHTSHIFT_FLOOR_API=http://127.0.0.1:$(FLOOR_PORT) npx next dev -p $(UI_PORT)
+
+ui-check:
+	cd ui && npm run lint && npx tsc --noEmit && npm test && npm run build
 
 clean:
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +

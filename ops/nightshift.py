@@ -18,7 +18,7 @@ def main(argv=None):
     f.add_argument("mode", choices=["serve", "build"])
     f.add_argument("root")
     f.add_argument("out", nargs="?", default="lab_floor_replay.html")
-    f.add_argument("--port", type=int, default=8765)
+    f.add_argument("--port", type=int, default=18765)
     a = ap.parse_args(argv)
 
     if a.cmd == "run":

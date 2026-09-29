@@ -30,7 +30,8 @@ def test_beats_are_one_ordered_sequence_from_the_runs_records(run_root):
     thinks = [b for b in beats if b["kind"] == "think"]
     assert all(str(b["call"]) in {str(k) for k in rep["calls"]} for b in thinks)
     assert {b["actor"] for b in thinks} >= {"pi", "methodologist", "critic", "experimenter"}
-    assert max(b["campaign"] for b in beats) == 2
+    plan_tasks = {b["task_id"] for b in thinks if b["task"] == "plan"}
+    assert max(b["campaign"] for b in beats) == len(plan_tasks) == 2  # a retried plan call is not a new campaign
     assert rep["total"] == pytest.approx(beats[-1]["at"] + beats[-1]["dur"])
 
 

@@ -1,7 +1,7 @@
 """Lab floor dashboard for the science rig.
 
 Two ways to use it:
-  make floor RUN=runs/latest            # live: http://localhost:8765 polls rig.db while the rig runs
+  make floor RUN=runs/latest            # live: http://localhost:18765 polls rig.db while the rig runs
   make replay RUN=runs/latest   # static replay: one self-contained HTML file
 
 Everything the page shows comes from the rig's own records: messages (send), task events (queue),
@@ -109,7 +109,7 @@ def build_state(root, since=0.0):
     )
 
 
-def serve(root, port=8765):
+def serve(root, port=18765):
     Handler.root = root
     print(f"lab floor on http://localhost:{port}  (Ctrl-C to stop)")
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

@@ -16,3 +16,6 @@ runs/
 
 # Operator data: the licence forbids redistribution (docs/specs/bikeshare.md)
 data/
+
+# Design source archives (the unpacked pack lives in docs/design/)
+assets/
