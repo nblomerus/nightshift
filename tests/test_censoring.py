@@ -83,7 +83,7 @@ def test_rig_refuses_to_pass_controls_without_the_mask(tmp_path):
     for seat, to in path:
         rig.advance(rig.seat_for(seat), "S1", to, checks={"prereg_fields": True})
     rig.advance(rig.seat_for("experimenter"), "S1", "implementation_checked",
-                checks={"implementable_exactly": True, "statement_from_config": True})  # fmt: skip
+                checks={"implementable_exactly": True, "statement_from_config": True, "code_checked": True})  # fmt: skip
     ok = {"p_decisive>=0.8": True, "controls_admissible": True}
     with pytest.raises(GuardError, match="censor_mask_available"):
         rig.advance(rig.seat_for("statistician"), "S1", "controls_passed", checks=dict(ok, censor_mask_available=False))

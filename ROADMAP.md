@@ -37,7 +37,7 @@ Items 1–4 close gaps found in real-model runs; 5–8 extend the lab; 9–10 ar
 - **Acceptance:** test that editing the judge between lock and run makes `advance(..., "run")` fail with a logged
   refusal.
 
-## 5. Code-writing experimenter and replicator (move beyond the config menu)
+## 5. Code-writing experimenter and replicator (move beyond the config menu) — done (bike-share judge)
 - **Why:** today "implementing" = choosing a config from `MENU`; real labs write code.
 - **What:** judge contract `treatment(train_view) -> predictions` executed in a sandboxed subprocess (no network,
   time/memory caps, read-only judge); the experimenter writes treatment code; the implementation check compares code

@@ -61,6 +61,16 @@ C inconclusive/deviated · D failed controls.
 4. `promote_champion`: only a grade-A replicated result against the current champion; others are re-tested later.
 5. Ledger, lessons and variance book are written (`ledger.json`) and feed the next campaign.
 
+## Seat-written code (ROADMAP 5: judges/sandbox.py, judges/bikeshare.py)
+Beyond the judge's menu, the PI may propose one new idea per campaign (a feature computable from the point-in-time
+view). The experimenter writes it as `features(view)` under the judge's `CODE_CONTRACT`; `check_code` runs it in the
+sandbox (no network, subprocesses or files outside scratch; bounded CPU, memory and time) on real point-in-time views,
+twice, and requires finite, non-constant, identical output; the critic then reviews the code against the idea. The
+`code_checked` guard gates the implementation step. The locked prereg carries the exact source, so the digest locks
+the code. The frozen judge adds the returned columns to the champion's GLM, so a code change is compared exactly like
+a menu change. The replicator writes its own implementation from the prereg text alone; it counts only if that code
+passes the checks and the decision agrees. A promoted champion carries its code forward verbatim.
+
 ## Knowledge graph (state/knowledge.py)
 The lab's memory across runs, one SQLite graph per rig (`knowledge/<rig>.db`, gitignored). After every campaign
 the daemon records the kernel's records: each test (change, champion, judge digest, data key, design, decision,

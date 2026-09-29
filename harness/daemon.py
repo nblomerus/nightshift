@@ -46,6 +46,8 @@ def make_ctx(llm, judge):
         n_campaigns=0,
         campaigns=[],
         replicating=[],
+        ideas={},  # code:<name> -> {name, idea}: seat-proposed changes (ROADMAP 5)
+        code={},  # slice -> {name, source, sha}: the code written for it
     )
 
 
@@ -183,7 +185,7 @@ def record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_b
     kg.screen(run, k, champion_before, screen)
     for e in new:
         pre = ctx["locked"][e["slice"]]
-        kg.test(run, k, e["slice"], change=e["key"], change_desc=J.MENU[e["key"]][0], treatment=pre.treatment,
+        kg.test(run, k, e["slice"], change=e["key"], change_desc=S.change_desc(ctx, e["key"]), treatment=pre.treatment,
                 comparator=pre.comparator, comparator_desc=S.describe_config(J, pre.comparator), judge=pre.judge_digest,
             evaluation=S.evaluation_key(J),
                 data_key=ctx["primary_seed"][e["slice"]], design=pre.design["name"],
@@ -210,14 +212,18 @@ def record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_b
             + (f"; last objection: {msgs[-1][:200]}" if msgs else "")
             + (f"; refused: {refused[-1]}" if refused else "")
         )
-        change = J.MENU.get(key, (key, {}))
+        try:
+            treatment = S.treatment_of(ctx, key, sid, champion_before)
+        except (ValueError, KeyError):  # a code idea parked before its code existed
+            treatment = dict(champion_before, idea=key)
+        change = (S.change_desc(ctx, key) if (key in ctx["ideas"] or key in J.MENU) else key, None)
         kg.test(
             run,
             k,
             sid,
             change=key,
             change_desc=change[0],
-            treatment=dict(champion_before, **change[1]),
+            treatment=treatment,
             comparator=champion_before,
             comparator_desc=S.describe_config(J, champion_before),
             judge=S.judge_digest(J),

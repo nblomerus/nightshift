@@ -242,7 +242,8 @@
     ],
     "requires": [
      "implementable_exactly",
-     "statement_from_config"
+     "statement_from_config",
+     "code_checked"
     ]
    },
    {

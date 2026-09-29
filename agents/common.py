@@ -133,14 +133,56 @@ def decision_clause(std, alpha):
     )
 
 
-def prereg_statement(judge, champion, key, std, alpha):
-    """The prereg statement, built only from the machine config and the fixed decision standards."""
-    comparator = describe_config(judge, champion)
-    treatment = describe_config(judge, dict(champion, **judge.MENU[key][1]))
+# ---------------------------------------------------------------------------- changes: menu items and seat ideas
+def is_code(key):
+    """A seat-proposed idea, implemented as code (ROADMAP 5), rather than a judge menu item."""
+    return str(key).startswith("code:")
+
+
+def change_desc(ctx, key):
+    if is_code(key):
+        idea = ctx["ideas"][key]
+        return f"Add a seat-written feature '{idea['name']}': {idea['idea']}"
+    return ctx["judge"].MENU[key][0]
+
+
+def treatment_of(ctx, key, sid=None, champion=None):
+    """The machine config a change makes of the champion. A code idea has one only once its code is written."""
+    champion = ctx["champion"] if champion is None else champion
+    if is_code(key):
+        item = (ctx.get("code") or {}).get(sid)
+        if item is None:
+            raise ValueError(f"{sid}: the code for {key} has not been written yet")
+        return dict(champion, code=list(champion.get("code") or []) + [dict(name=item["name"], source=item["source"])])
+    return dict(champion, **ctx["judge"].MENU[key][1])
+
+
+def statement_for(ctx, key, std, alpha):
+    """The prereg statement, built only from the machine config, the change and the fixed decision standards. For a
+    code idea it names the idea; the locked config carries the exact code."""
+    J, champion = ctx["judge"], ctx["champion"]
+    comparator = describe_config(J, champion)
+    if is_code(key):
+        treatment = f"{comparator} + seat-written feature '{ctx['ideas'][key]['name']}'"
+    else:
+        treatment = describe_config(J, dict(champion, **J.MENU[key][1]))
     return (
-        f"Hypothesis: the change '{judge.MENU[key][0]}' reduces {judge.TARGET} relative to the current champion. "
+        f"Hypothesis: the change '{change_desc(ctx, key)}' reduces {J.TARGET} relative to the current champion. "
         f"Comparator (current champion): {comparator}. Treatment: {treatment}. {decision_clause(std, alpha)}"
     )
+
+
+def prereg_statement(judge, champion, key, std, alpha):
+    return statement_for(dict(judge=judge, champion=champion, ideas={}), key, std, alpha)
+
+
+CODE_FENCE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.S)
+
+
+def extract_code(reply):
+    """The Python source in a reply's fenced code block (the last one), or None."""
+    blocks = CODE_FENCE.findall(reply or "")
+    return blocks[-1].strip() + "\n" if blocks else None
 
 
 # ---------------------------------------------------------------------------- methodologist
