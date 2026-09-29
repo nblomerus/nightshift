@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { besideSpot, seatSpot, VAULT_SPOT, workstationSpot } from "./layout";
-import { beatIndexAt, BUBBLE_H, layoutBubbles, pipelineReached, sceneAt, stageAt } from "./scene";
+import { beatIndexAt, BUBBLE_H, layoutBubbles, pipelineReached, sceneAt, stageAt, thoughtAt } from "./scene";
 import type { Beat, Replay, Slice } from "./types";
 
 const seats = Object.fromEntries(
@@ -105,5 +105,33 @@ describe("slices", () => {
     expect(stageAt(slice, 3.5)).toBe("prereg_draft");
     expect(pipelineReached(slice, 4.5)).toEqual({ reached: 3, current: 3, parked: false });
     expect(pipelineReached(slice, 9).parked).toBe(true);
+  });
+});
+
+describe("thinking bubbles", () => {
+  const reasoning = Array.from({ length: 60 }, (_, k) => `thought${k}`).join(" ");
+  const call = { seat: "pi", tier: "reasoning", s: 10, error: null, prompt: "p", reasoning, reply: "{}" };
+
+  it("rolls through the recorded reasoning as the call plays", () => {
+    const early = thoughtAt(call, 0.1);
+    const late = thoughtAt(call, 0.9); // the whole reasoning is shown by 85% of the beat
+    expect(early).toContain("thought0");
+    expect(late).toContain("thought59");
+    expect(late.startsWith("…")).toBe(true);
+    expect(early).not.toEqual(late);
+  });
+
+  it("shows the latest streamed reasoning while a call is still running", () => {
+    expect(thoughtAt({ ...call, in_flight: true, s: null, reasoning: "Is the comparator explicit?" }, 0)).toBe(
+      "Is the comparator explicit?",
+    );
+  });
+
+  it("titles a thinking seat's bubble with its task and fills it with the thought", () => {
+    const b = { ...beats[2], call: 7 };
+    const withCalls = { ...replay, calls: { "7": call }, beats: [...beats.slice(0, 2), b, ...beats.slice(3)] } as Replay;
+    const bubble = sceneAt(withCalls, 12).bubbles.find((x) => x.seat === "methodologist")!;
+    expect(bubble.title).toBe(b.text);
+    expect(bubble.text).toContain("thought");
   });
 });

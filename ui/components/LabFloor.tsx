@@ -259,7 +259,14 @@ export function LabFloor({ replay, scene, t, selectedSeat, onSeat, onComputer, o
             className={`absolute border-2 px-2 py-1 text-left text-[11px] leading-snug shadow-[3px_3px_0_#050814] transition-opacity ${TONE[bb.tone]} ${bb.strong ? "opacity-100" : "opacity-55"}`}
             style={{ left: bb.x, top: bb.y, width: bb.w, minHeight: bb.h, zIndex: bb.strong ? 50 : 45 }}
           >
-            <span className="line-clamp-2">{bb.text}</span>
+            {bb.title ? (
+              <>
+                <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-[#53648E]">{bb.title}</span>
+                <span className="line-clamp-3 font-mono text-[10.5px] italic leading-snug text-[#263255]">{bb.text}</span>
+              </>
+            ) : (
+              <span className="line-clamp-2">{bb.text}</span>
+            )}
           </button>
         ))}
       </div>

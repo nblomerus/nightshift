@@ -2,13 +2,14 @@
 // drives replay (t from the player) and live mode (t = the end of the latest snapshot), and is unit-tested.
 
 import { besideSpot, seatSpot, SEAT_ORDER, VAULT_SPOT, workstationSpot } from "./layout";
-import type { Beat, BeatKind, Replay, Slice } from "./types";
+import type { Beat, BeatKind, Call, Replay, Slice } from "./types";
 
 export type Action = "idle" | "type" | "compute" | "talk" | "listen" | "lock" | "refused";
 export type Tone = BeatKind | "listen";
 
 export interface BubbleBox {
   seat: string;
+  title?: string; // a thinking seat: its task; `text` is then its reasoning at this moment
   text: string;
   tone: Tone;
   strong: boolean; // the current beat; weak = what this seat was last doing
@@ -40,6 +41,25 @@ export interface Scene {
 
 export const BUBBLE_W = 176;
 export const BUBBLE_H = 46;
+export const THOUGHT_W = 236;
+export const THOUGHT_H = 78;
+const THOUGHT_CHARS = 150;
+
+// What a thinking seat is thinking at `frac` of its call: in replay, the stretch of its recorded reasoning that far in
+// (so the bubble keeps moving); for a call still running, the latest reasoning the stream reported.
+export function thoughtAt(call: Call | undefined, frac: number): string {
+  if (!call) return "";
+  const text = (call.reasoning || "").replace(/\s+/g, " ").trim();
+  if (!text) return call.in_flight ? "…" : call.reply ? call.reply.replace(/\s+/g, " ").slice(0, THOUGHT_CHARS) : "";
+  const end = call.in_flight ? text.length : Math.max(THOUGHT_CHARS, Math.round(text.length * Math.min(1, frac / 0.85)));
+  const cut = Math.min(end, text.length);
+  let start = Math.max(0, cut - THOUGHT_CHARS);
+  if (start > 0) {
+    const space = text.indexOf(" ", start);
+    start = space > 0 && space < cut ? space + 1 : start;
+  }
+  return (start > 0 ? "…" : "") + text.slice(start, cut);
+}
 export const HOLD = 24; // display seconds a finished action stays visible as a faint bubble
 
 export function beatIndexAt(beats: Beat[], t: number): number {
@@ -91,15 +111,16 @@ export function layoutBubbles(wanted: Omit<BubbleBox, "x" | "y" | "w" | "h">[], 
   for (const w of order) {
     const s = pos.get(w.seat);
     if (!s) continue;
-    const width = w.text === "…" ? 40 : BUBBLE_W;
-    const box: BubbleBox = { ...w, w: width, h: BUBBLE_H, x: Math.max(4, s.x + 24 - width / 2), y: s.y - BUBBLE_H - 10 };
+    const width = w.text === "…" ? 40 : w.title ? THOUGHT_W : BUBBLE_W;
+    const height = w.title ? THOUGHT_H : BUBBLE_H;
+    const box: BubbleBox = { ...w, w: width, h: height, x: Math.max(4, s.x + 24 - width / 2), y: s.y - height - 10 };
     let ok = false;
     for (let tries = 0; tries < 3; tries++) {
       if (!placed.some((p) => overlaps(p, box))) {
         ok = true;
         break;
       }
-      box.y -= BUBBLE_H + 6;
+      box.y -= box.h + 6;
     }
     if (ok || w.strong) placed.push(box);
   }
@@ -120,7 +141,10 @@ export function sceneAt(replay: Replay, t: number): Scene {
   });
   const wanted: Omit<BubbleBox, "x" | "y" | "w" | "h">[] = [];
   for (const s of seats) {
-    if (beat && s.current) wanted.push({ seat: s.seat, text: beat.text, tone: beat.kind, strong: true });
+    if (beat && s.current && beat.kind === "think") {
+      const call = beat.call !== undefined ? replay.calls[String(beat.call)] : undefined;
+      wanted.push({ seat: s.seat, title: beat.text, text: thoughtAt(call, frac) || beat.text, tone: "think", strong: true });
+    } else if (beat && s.current) wanted.push({ seat: s.seat, text: beat.text, tone: beat.kind, strong: true });
     else if (s.action === "listen") wanted.push({ seat: s.seat, text: "…", tone: "listen", strong: true });
     else if (s.lastBeat !== null) {
       const b = beats[s.lastBeat];

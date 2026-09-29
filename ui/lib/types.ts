@@ -24,7 +24,10 @@ export interface Beat {
 export interface Call {
   seat: string;
   tier: string | null;
-  s: number;
+  s: number | null; // null while in flight
+  in_flight?: boolean;
+  reasoning_chars?: number;
+  updated?: number | null;
   error: string | null;
   prompt: string;
   reasoning: string;

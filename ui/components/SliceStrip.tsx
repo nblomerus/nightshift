@@ -100,7 +100,10 @@ export function SliceStrip({
   selected: string | null;
   onSlice: (id: string) => void;
 }) {
-  const visible = replay.slices.filter((s) => stageAt(s, t) !== null && (allCampaigns || campaignOf(s.id) === campaign));
+  const started = replay.slices.filter((s) => stageAt(s, t) !== null);
+  const mine = started.filter((s) => campaignOf(s.id) === campaign);
+  // a campaign that tested nothing shows every campaign's slices rather than an empty strip
+  const visible = allCampaigns || mine.length === 0 ? started : mine;
   const active = visible.filter((s) => !["written", "parked"].includes(stageAt(s, t) ?? "")).length;
   return (
     <section aria-label="Research slices" className="flex max-h-[236px] min-h-0 flex-col rounded-md border border-[#1B2444] bg-[#0B1122]">
