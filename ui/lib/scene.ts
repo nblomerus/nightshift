@@ -58,18 +58,36 @@ export function ownWords(text: string): string {
 
 // What a thinking seat is thinking at `frac` of its call: in replay, the stretch of its recorded reasoning that far in
 // (so the bubble keeps moving); for a call still running, the latest reasoning the stream reported.
-export function thoughtAt(call: Call | undefined, frac: number): string {
+export const SECONDS_PER_THOUGHT = 2.5; // display seconds each sentence stays in a bubble: long enough to read
+
+function sentences(text: string): string[] {
+  return text
+    .split(/(?<=[.?!])\s+/)
+    .map((x) => x.trim())
+    .filter((x) => x.length >= 12);
+}
+
+function fit(sentence: string): string {
+  return sentence.length <= THOUGHT_CHARS ? sentence : sentence.slice(0, THOUGHT_CHARS - 1).replace(/\s+\S*$/, "") + "…";
+}
+
+// What a thinking seat is thinking, one sentence at a time. In replay, sentences are taken evenly through its recorded
+// reasoning and each stays SECONDS_PER_THOUGHT display seconds, so the bubble moves at reading pace however long the
+// reasoning is; the last one is where it ended up. For a call still running, the latest complete sentence streamed.
+export function thoughtAt(call: Call | undefined, frac: number, dur = 12): string {
   if (!call) return "";
   const text = ownWords(call.reasoning || "");
-  if (!text) return call.in_flight ? "…" : call.reply ? call.reply.replace(/\s+/g, " ").slice(0, THOUGHT_CHARS) : "";
-  const end = call.in_flight ? text.length : Math.max(THOUGHT_CHARS, Math.round(text.length * Math.min(1, frac / 0.85)));
-  const cut = Math.min(end, text.length);
-  let start = Math.max(0, cut - THOUGHT_CHARS);
-  if (start > 0) {
-    const space = text.indexOf(" ", start);
-    start = space > 0 && space < cut ? space + 1 : start;
+  if (!text) return call.in_flight ? "…" : call.reply ? fit(call.reply.replace(/\s+/g, " ")) : "";
+  const all = sentences(text);
+  if (!all.length) return fit(text);
+  if (call.in_flight) {
+    const done = text.endsWith(".") || text.endsWith("?") || text.endsWith("!");
+    return fit(all[done || all.length === 1 ? all.length - 1 : all.length - 2]);
   }
-  return (start > 0 ? "…" : "") + text.slice(start, cut);
+  const n = Math.max(1, Math.min(all.length, Math.round(dur / SECONDS_PER_THOUGHT)));
+  const k = Math.min(n - 1, Math.floor(Math.max(0, frac) * n));
+  const idx = n === 1 ? all.length - 1 : Math.round((k * (all.length - 1)) / (n - 1));
+  return fit(all[idx]);
 }
 export const HOLD = 24; // display seconds a finished action stays visible as a faint bubble
 
@@ -154,7 +172,7 @@ export function sceneAt(replay: Replay, t: number): Scene {
   for (const s of seats) {
     if (beat && s.current && beat.kind === "think") {
       const call = beat.call !== undefined ? replay.calls[String(beat.call)] : undefined;
-      wanted.push({ seat: s.seat, title: beat.text, text: thoughtAt(call, frac) || beat.text, tone: "think", strong: true });
+      wanted.push({ seat: s.seat, title: beat.text, text: thoughtAt(call, frac, beat.dur) || beat.text, tone: "think", strong: true });
     } else if (beat && s.current) wanted.push({ seat: s.seat, text: beat.text, tone: beat.kind, strong: true });
     else if (s.action === "listen") wanted.push({ seat: s.seat, text: "…", tone: "listen", strong: true });
     else if (s.lastBeat !== null) {
