@@ -22,11 +22,12 @@ def openai_compatible_llm(
     reasoning_model: str,
     utility_model: str,
     api_key: str = "none",
-    max_tokens: int = 8000,
+    max_tokens: int = 16000,
     timeout: int = 600,
 ):
     """Any OpenAI-compatible chat endpoint: a local vLLM / SGLang / Ollama server or a hosted API.
-    Reasoning models spend tokens thinking, so keep ``max_tokens`` generous (4k was too small in practice)."""
+    Reasoning models spend tokens thinking, so keep ``max_tokens`` generous: 4k was too small, and at 8k DeepSeek's
+    reasoner sometimes spent it all thinking and returned an empty reply."""
 
     def llm(prompt, system=None, tier=None):
         body = dict(
