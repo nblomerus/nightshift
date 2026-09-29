@@ -14,6 +14,8 @@ from harness.llm import recording_llm
 from state.knowledge import Knowledge
 from state.rig import GuardError, Rig
 
+TASK_ATTEMPTS = 3  # an LLM seat that returns no usable answer gets its task again, up to this many times in all
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_RIGSPEC = os.path.join(REPO_ROOT, "rigs", "forecast-lab.json")
 
@@ -74,6 +76,16 @@ def tick(rig, ctx, transcript):
             except (GuardError, ValueError, KeyError) as e:
                 rig.complete(seat, task["id"], dict(error=str(e)), state="parked")
                 transcript.append(dict(seat=seat, task=task["kind"], slice=task["slice"], ok=False, error=str(e)))
+                # A seat that could not answer (no JSON from its LLM) gets the same task again, twice at most. A guard
+                # refusal is never retried: the rig said no.
+                tries = task["payload"].get("attempt", 1)
+                if (
+                    isinstance(e, ValueError)
+                    and not isinstance(e, GuardError)
+                    and tries < TASK_ATTEMPTS
+                    and task["slice"]
+                ):
+                    rig.queue(seat, seat, task["kind"], task["slice"], dict(task["payload"], attempt=tries + 1))
             did = True
             if (
                 task["kind"] == "plan"
@@ -182,6 +194,12 @@ def record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_b
         note = rig.db.execute(
             "SELECT note FROM slice_events WHERE slice=? AND to_stage='parked' ORDER BY ts DESC", (sid,)
         ).fetchone()
+        failed = rig.db.execute(
+            "SELECT kind, result FROM tasks WHERE slice=? AND state='parked' ORDER BY id DESC", (sid,)
+        ).fetchone()
+        if not note and failed:  # stalled: the workflow never reached a terminal stage
+            error = json.loads(failed[1] or "{}").get("error", "")[:120]
+            note = (f"stalled at {rig.stage(sid)}: {failed[0]} failed ({error})",)
         refused = [
             n for (n,) in rig.db.execute("SELECT note FROM slice_events WHERE slice=? AND ok=0 ORDER BY ts", (sid,))
         ]
@@ -206,7 +224,7 @@ def record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_b
             design=draft.get("design", ""),
             decision=None,
             grade=None,
-            stage="parked",
+            stage=rig.stage(sid),
             reason=reason,
         )
     for text in ctx["lessons"][lessons_before:]:
@@ -252,6 +270,12 @@ def run(llm, root="runs/latest", max_ticks=40, n_campaigns=3, rigspec: str | Non
             for sid, st in rig.db.execute("SELECT id, stage FROM slices WHERE id LIKE ?", (f"C{k}-%",))
             if st == "parked"
         ]
+        # Slices that ended the campaign mid-workflow (a seat kept failing): recorded as stalled, never lost.
+        stalled = [
+            sid
+            for sid, st in rig.db.execute("SELECT id, stage FROM slices WHERE id LIKE ?", (f"C{k}-%",))
+            if st not in ("written", "parked") and not any(e["slice"] == sid for e in new)
+        ]
         ctx["campaigns"].append(
             dict(
                 campaign=k,
@@ -259,11 +283,12 @@ def run(llm, root="runs/latest", max_ticks=40, n_campaigns=3, rigspec: str | Non
                 tested=[e["key"] for e in new],
                 decisions=[(e["key"], e["decision"], e["grade"]) for e in new],
                 parked=parked,
+                stalled=stalled,
                 promoted=promoted,
                 champion_after=ctx["champion_desc"],
             )
         )
-        record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_before, promoted)
+        record_campaign(rig, ctx, k, champion_before, screen, new, parked + stalled, lessons_before, promoted)
         write_ledger(root, ctx)  # the dashboard reads this live
         if not new and not parked:
             break  # PI chose nothing worth testing: the loop converged

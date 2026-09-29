@@ -23,7 +23,10 @@ def ask_json(llm, seat_spec, system, prompt, retries=1):
                 return json.loads(m.group(0))
             except json.JSONDecodeError:
                 pass
-        prompt += "\n\nYour last reply was not valid JSON. Reply with ONE JSON object only."
+        if not r.strip():  # a reasoning model that spent its whole budget thinking returns nothing
+            prompt += "\n\nYour last reply was empty: keep your reasoning brief and reply with ONE JSON object only."
+        else:
+            prompt += "\n\nYour last reply was not valid JSON. Reply with ONE JSON object only."
     raise ValueError(f"no JSON from LLM: {r[:200]}")
 
 
