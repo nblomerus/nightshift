@@ -26,8 +26,9 @@ make replay RUN=runs/demo && open runs/demo/replay.html
 Run against a real model (any OpenAI-compatible endpoint: local vLLM / SGLang / Ollama, or a hosted API):
 ```bash
 cp .env.example .env        # set LLM_BASE_URL, REASONING_MODEL, UTILITY_MODEL
-make floor                  # terminal 1: live lab floor on http://localhost:8765 (RUN=runs/latest)
-make rig CAMPAIGNS=3        # terminal 2: the lab
+make floor                  # terminal 1: the lab-floor data API on :18765 (RUN=runs/latest)
+make ui                     # terminal 2: the lab floor UI on http://localhost:18088 (make ui-install once)
+make rig CAMPAIGNS=3        # terminal 3: the lab
 ```
 A recorded 3-campaign run with a real model is in [examples/forecast-3-campaigns](examples/forecast-3-campaigns)
 (open `replay.html`).

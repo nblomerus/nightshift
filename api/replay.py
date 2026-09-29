@@ -122,15 +122,16 @@ def _build(root, db, clip_text):
     for n, s in starts.items():
         e = ends.get(n)
         seat, t0 = _seat(s["seat"]), s["t"]
-        task = next(
+        tid = next(
             (
-                t
+                tid
                 for tid, t in tasks.items()
                 if t["owner"] == seat
                 and tev.get(tid, {}).get("claimed", 9e18) <= t0 + 0.01 <= tev.get(tid, {}).get("done", 9e18) + 0.01
             ),
             None,
         )
+        task = tasks.get(tid)
         label = THINK.get(task["kind"], "Answering a question") if task else "Reading the findings"
         sl = (task or {}).get("slice") or ""
         real = e["s"] if e else None  # None: the call is still in flight
@@ -145,6 +146,7 @@ def _build(root, db, clip_text):
                     call=n,
                     real=real,
                     task=(task or {}).get("kind"),
+                    task_id=tid,
                 ),
             )
         )
@@ -188,10 +190,11 @@ def _build(root, db, clip_text):
             )
     raw.sort(key=lambda x: x[0])
 
-    beats, at, campaign = [], 0.0, 0
+    beats, at, plans = [], 0.0, set()
     for ts, b in raw:
         if b["kind"] == "think" and b.get("task") == "plan":
-            campaign += 1
+            plans.add(b["task_id"])  # one plan task may take several calls (a retry after invalid JSON)
+        campaign = len(plans)
         dur = min(max((b.get("real") or 20) / 5, 4.0), 12.0) if b["kind"] == "think" else DURATION[b["kind"]]
         b.update(ts=round(ts, 3), at=round(at, 1), dur=round(dur, 1), campaign=max(campaign, 1))
         at += dur
