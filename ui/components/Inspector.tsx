@@ -71,26 +71,27 @@ function ScreenTab({ replay, scene, t, target, onFollow }: { replay: Replay; sce
   if (!b) return header;
   if (b.kind === "think") {
     const c = replay.calls[String(b.call)];
-    const inFlight = b.real === null && k === replay.beats.length - 1;
+    const inFlight = !!c?.in_flight;
     const r = c?.reasoning || "";
-    // Replay reveals the recorded reasoning over the beat; the real text only exists once the call ends.
-    const shown = r.slice(0, Math.floor(r.length * Math.min(1, f / 0.8)));
+    // Replay reveals the recorded reasoning over the beat; a running call shows the latest the stream reported.
+    const shown = inFlight ? r : r.slice(0, Math.floor(r.length * Math.min(1, f / 0.8)));
     return (
       <div className="flex flex-col gap-3">
         {header}
         {c ? (
           <div className="flex flex-col gap-2 rounded-md border-2 border-[#263255] bg-[#060A18] p-3">
             <span className="font-mono text-[11px] text-[#AAB4CA]">
-              call #{b.call} · {c.tier} · {Math.round(c.s)} s{c.error ? ` · ${c.error}` : ""}
+              call #{b.call} · {c.tier} · {inFlight ? `thinking… ${c.reasoning_chars ?? 0} chars so far` : `${Math.round(c.s ?? 0)} s`}
+              {c.error ? ` · ${c.error}` : ""}
             </span>
             <Label>Prompt</Label>
             <Mono>{c.prompt}</Mono>
             <Label color="#B4A7FF">Reasoning</Label>
             <Mono className="text-[#D3CBFF]">
               {r ? shown : "(the model returned no separate reasoning)"}
-              {f < 0.85 && r ? <span className="blink text-[#B4A7FF]">█</span> : null}
+              {(inFlight || f < 0.85) && r ? <span className="blink text-[#B4A7FF]">█</span> : null}
             </Mono>
-            {f >= 0.85 ? (
+            {!inFlight && f >= 0.85 ? (
               <>
                 <Label color="#63D6CC">Reply</Label>
                 <Mono>{c.reply}</Mono>

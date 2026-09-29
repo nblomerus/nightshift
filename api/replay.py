@@ -56,16 +56,19 @@ def _read(path):
 def _calls(root):
     path = os.path.join(root, "llm_calls.jsonl")
     if not os.path.exists(path):
-        return {}, {}
-    starts, ends = {}, {}
+        return {}, {}, {}
+    starts, ends, progress = {}, {}, {}
     with open(path) as f:
         for line in f:
             try:
                 r = json.loads(line)
             except ValueError:
                 continue  # a line still being written
-            (starts if r["event"] == "start" else ends)[r["call"]] = r
-    return starts, ends
+            {"start": starts, "end": ends, "progress": progress}.get(r["event"], {})[r["call"]] = r  # latest progress
+    return starts, ends, progress
+
+
+REASONING_CLIP = 5000  # enough for the lab floor's bubbles to roll through a seat's thinking
 
 
 def build_replay(root, clip_text=700):
@@ -77,7 +80,7 @@ def build_replay(root, clip_text=700):
 
 
 def _build(root, db, clip_text):
-    starts, ends = _calls(root)
+    starts, ends, progress = _calls(root)
     tasks = {
         r[0]: dict(creator=_seat(r[1]), owner=_seat(r[2]), kind=r[3], slice=r[4])
         for r in db.execute("SELECT id, creator, owner, kind, slice FROM tasks")
@@ -134,6 +137,16 @@ def _build(root, db, clip_text):
         task = tasks.get(tid)
         label = THINK.get(task["kind"], "Answering a question") if task else "Reading the findings"
         sl = (task or {}).get("slice") or ""
+        if task and task["kind"] == "check_implementation" and "-code_" in sl:
+            label = "Writing the code"  # a seat-proposed idea: the experimenter implements it
+        if task is None:  # called inside another seat's task: the critic reviewing the experimenter's code
+            host = next(
+                (t for t2, t in tasks.items() if t["kind"] == "check_implementation"
+                 and tev.get(t2, {}).get("claimed", 9e18) <= t0 + 0.01 <= tev.get(t2, {}).get("done", 9e18) + 0.01),
+                None,
+            )  # fmt: skip
+            if host:
+                label, sl = "Reviewing the code", host["slice"] or ""
         real = e["s"] if e else None  # None: the call is still in flight
         raw.append(
             (
@@ -227,11 +240,18 @@ def _build(root, db, clip_text):
             s=e["s"],
             error=e.get("error"),
             prompt=_clip(e["prompt"], clip_text),
-            reasoning=_clip(e.get("reasoning"), clip_text),
+            reasoning=_clip(e.get("reasoning"), REASONING_CLIP),
             reply=_clip(e["reply"], clip_text),
+            in_flight=False,
         )  # fmt: skip
         for n, e in ends.items()
     }
+    for n, s in starts.items():  # still running: the prompt and the latest reasoning the stream has reported
+        if n not in ends:
+            p = progress.get(n, {})
+            calls[n] = dict(seat=_seat(s["seat"]), tier=s.get("tier"), s=None, error=None, in_flight=True,
+                            prompt=_clip(s.get("prompt"), clip_text), reasoning=p.get("reasoning_tail", ""),
+                            reasoning_chars=p.get("reasoning_chars", 0), reply="", updated=p.get("t"))  # fmt: skip
     return dict(
         rig=spec.get("rig", ""),
         mission=spec.get("mission", ""),
