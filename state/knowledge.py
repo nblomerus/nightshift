@@ -232,7 +232,9 @@ class Knowledge:
             )
         ls = self.lessons()
         if ls:
-            lines.append("- Lessons written by seats in earlier campaigns (narrative, NOT evidence):")
+            lines.append(
+                "- Lessons written by seats in earlier campaigns (narrative, NOT evidence; weigh them, not rules):"
+            )
             lines += [f"  - {x[:220]}" for x in ls]
         return "\n".join(lines)
 

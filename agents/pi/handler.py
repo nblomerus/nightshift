@@ -36,7 +36,7 @@ def pi_plan(rig, seat, task, ctx):
         )
         or "(none yet)"
     )
-    screen = "\n".join(f"- {k}: {v:+.2%}" for k, v in ctx["screen"].items())
+    screen = "\n".join(f"- {k}: {v:+.2%}" for k, v in ctx["screen"].items() if k in menu) or "(nothing left to screen)"
     vb = (
         "\n".join(
             f"- {k} design {d}: pilot SE {v['se']:.2%}, pilot effect {v['pilot_effect']:+.2%}"
@@ -67,12 +67,20 @@ def pi_plan(rig, seat, task, ctx):
             "You may also propose ONE new idea that is not on the list: a feature computable from each station's "
             "daily pickup history up to the forecast origin, the target dates and station coordinates. The experimenter "
             'will write it as code. Pick it as {"key": "new", "name": "short_snake_case_name", "idea": "what the feature '
-            'is and why it should reduce the error, in 2-3 sentences", "rationale": "..."}. '
+            'is and why it should reduce the error, in 2-3 sentences", "rationale": "..."}. A new idea has no exploratory '
+            "screen yet, so lessons about screens do not apply to it; it is judged only by the preregistered test. "
+            + (
+                "None of the listed changes has a positive screen: a well-reasoned new idea is how the lab keeps "
+                "learning now. "
+                if not any(v > 0 for k, v in ctx["screen"].items() if k in menu)
+                else ""
+            )
             if new_ideas
             else ""
         )
-        + "Pick up to TWO changes in all to test confirmatorily this campaign; only the changes listed above are available. "
-        "Do not pick changes already graded A. If nothing is worth testing, pick none. Also state one lesson the lab "
+        + "Pick up to TWO changes in all to test confirmatorily this campaign: listed changes"
+        + (" and at most one new idea. " if new_ideas else ". ")
+        + "Do not pick changes already graded A. If nothing is worth testing, pick none. Also state one lesson the lab "
         "should carry forward. "
         'Reply JSON: {"picks": [{"key": "...", "rationale": "..."}], "lesson": "..."}',
     )
