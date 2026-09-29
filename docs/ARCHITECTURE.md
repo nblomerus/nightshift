@@ -61,6 +61,16 @@ C inconclusive/deviated · D failed controls.
 4. `promote_champion`: only a grade-A replicated result against the current champion; others are re-tested later.
 5. Ledger, lessons and variance book are written (`ledger.json`) and feed the next campaign.
 
+## Knowledge graph (state/knowledge.py)
+The lab's memory across runs, one SQLite graph per rig (`knowledge/<rig>.db`, gitignored). After every campaign
+the daemon records the kernel's records: each test (change, champion, judge digest, data key, design, decision,
+grade, prereg digest), each parked attempt with its reason, promotions, plus exploratory screens and seats' lessons,
+typed as such and never read as evidence. Before planning, the PI gets the graph's brief, and a change already decided
+against the current champion on the same data under the same judge is not offered again (re-running it can only
+reproduce the answer; the synthetic judge's fresh seeds are never a repeat). A new run continues from the graph's
+champion. The graph never sets a decision or a grade. `make knowledge RIGSPEC=...` prints the brief;
+`IMPORT=runs/<run>` backfills a run made before the graph existed.
+
 ## Data separation (the judge's `data_keys`; `judges/forecast_lab.py` for the synthetic judge)
 Pilot seeds (power only) · exploration seeds (screen only) · primary seed per slice · replication seed per slice · extra-replication seeds; per-slice seeds come from
 `slice_seed(purpose, campaign, slot)`, one block of a million per purpose.

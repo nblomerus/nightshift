@@ -11,6 +11,7 @@ from pathlib import Path
 
 import agents as S
 from harness.llm import recording_llm
+from state.knowledge import Knowledge
 from state.rig import GuardError, Rig
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -132,7 +133,90 @@ def board(rig):
     return "\n".join(lines)
 
 
-def run(llm, root="runs/latest", max_ticks=40, n_campaigns=3, rigspec: str | None = None):
+def rebuild_config(judge, stored):
+    """A config read back from JSON (tuples became lists) as the judge's own baseline plus its menu changes, or None
+    if it is not one."""
+    canon = json.loads(json.dumps(stored, default=str))
+    config = dict(judge.BASELINE)
+    for _, change in judge.MENU.values():
+        if all(json.loads(json.dumps(v, default=str)) == canon.get(f) for f, v in change.items()):
+            config.update(change)
+    return (
+        config
+        if json.dumps(config, sort_keys=True, default=str) == json.dumps(canon, sort_keys=True, default=str)
+        else None
+    )
+
+
+def open_knowledge(path, spec, judge, ctx, run_name):
+    """Attach the lab's knowledge graph and continue from its champion (when it still fits this judge's menu)."""
+    kg = Knowledge(path, spec.get("rig", "rig"))
+    ctx["knowledge"], ctx["run_id"] = kg, kg.begin_run(run_name, S.judge_digest(judge))
+    resumed = kg.current_champion()
+    if resumed:
+        champ = rebuild_config(judge, resumed[0])
+        if champ is not None:  # None: the judge changed shape since; start from its baseline
+            ctx["champion"], ctx["champion_desc"] = champ, S.describe_config(judge, champ)
+    kg.champion(ctx["champion"], ctx["champion_desc"])
+    kg.commit()
+    return kg
+
+
+def record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_before, promoted):
+    """What campaign k established, into the knowledge graph: the kernel's records, plus screens and lessons typed as
+    such. Called once per campaign, after promotion."""
+    kg, run, J = ctx.get("knowledge"), ctx.get("run_id"), ctx["judge"]
+    if kg is None:
+        return
+    kg.screen(run, k, champion_before, screen)
+    for e in new:
+        pre = ctx["locked"][e["slice"]]
+        kg.test(run, k, e["slice"], change=e["key"], change_desc=J.MENU[e["key"]][0], treatment=pre.treatment,
+                comparator=pre.comparator, comparator_desc=S.describe_config(J, pre.comparator), judge=pre.judge_digest,
+                data_key=ctx["primary_seed"][e["slice"]], design=pre.design["name"],
+                decision=dict(decision=e["decision"], point=e["point"], lo=e["lo"], hi=e["hi"]), grade=e["grade"],
+                stage="written", prereg=pre.digest)  # fmt: skip
+    for sid in parked:
+        draft = rig.read_proof(sid, "prereg_draft.json") or {}
+        key = draft.get("treatment_key") or sid.split("-", 2)[-1]
+        note = rig.db.execute(
+            "SELECT note FROM slice_events WHERE slice=? AND to_stage='parked' ORDER BY ts DESC", (sid,)
+        ).fetchone()
+        refused = [
+            n for (n,) in rig.db.execute("SELECT note FROM slice_events WHERE slice=? AND ok=0 ORDER BY ts", (sid,))
+        ]
+        msgs = [b for (b,) in rig.db.execute("SELECT body FROM messages WHERE slice=? ORDER BY id", (sid,))]
+        reason = (
+            (note[0] if note else "parked")
+            + (f"; last objection: {msgs[-1][:200]}" if msgs else "")
+            + (f"; refused: {refused[-1]}" if refused else "")
+        )
+        change = J.MENU.get(key, (key, {}))
+        kg.test(
+            run,
+            k,
+            sid,
+            change=key,
+            change_desc=change[0],
+            treatment=dict(champion_before, **change[1]),
+            comparator=champion_before,
+            comparator_desc=S.describe_config(J, champion_before),
+            judge=S.judge_digest(J),
+            data_key=ctx["primary_seed"].get(sid),
+            design=draft.get("design", ""),
+            decision=None,
+            grade=None,
+            stage="parked",
+            reason=reason,
+        )
+    for text in ctx["lessons"][lessons_before:]:
+        kg.lesson(run, k, text)
+    if promoted:
+        sid = ctx["champion_history"][-1]["evidence"]
+        kg.promote(run, k, champion_before, ctx["champion"], ctx["champion_desc"], promoted, f"test:{run}:{sid}")
+
+
+def run(llm, root="runs/latest", max_ticks=40, n_campaigns=3, rigspec: str | None = None, knowledge: str | None = None):
     """The outer feedback loop. Each campaign: explore (cheap, exploratory) -> PI plans from the
     evidence ledger + lessons -> slices run the preregistered workflow -> champion is promoted only on
     a replicated result -> lessons and variance estimates carry into the next campaign."""
@@ -144,8 +228,11 @@ def run(llm, root="runs/latest", max_ticks=40, n_campaigns=3, rigspec: str | Non
     rig, ctx, transcript = Rig(root, spec), make_ctx(llm, judge), []
     Path(root, "rigspec.json").write_text(json.dumps(spec, indent=1))  # the dashboard reads this copy
     ctx["n_campaigns"] = n_campaigns
+    if knowledge:
+        open_knowledge(knowledge, spec, judge, ctx, os.path.basename(os.path.abspath(root)))
     for k in range(1, n_campaigns + 1):
         ctx["campaign"] = k
+        champion_before, lessons_before = dict(ctx["champion"]), len(ctx["lessons"])
         screen = S.explorer_screen(ctx)
         rig.send(
             rig.seat_for("pi"),
@@ -176,6 +263,7 @@ def run(llm, root="runs/latest", max_ticks=40, n_campaigns=3, rigspec: str | Non
                 champion_after=ctx["champion_desc"],
             )
         )
+        record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_before, promoted)
         write_ledger(root, ctx)  # the dashboard reads this live
         if not new and not parked:
             break  # PI chose nothing worth testing: the loop converged

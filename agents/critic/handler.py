@@ -22,7 +22,8 @@ def critic_review(rig, seat, task, ctx):
         "SESOI justified for a demand-planning decision; is kills_if concrete; any leakage or confound risk "
         "(features must be known at forecast time)? Object only to BLOCKING problems."
         + (" This is the final round: approve unless a blocking problem remains." if final_round else "")
-        + " The SESOI, target effect and alpha are fixed lab standards; do not object to them. A request to change "
+        + " The SESOI, target effect, alpha AND the decision rule in the statement are fixed lab standards, generated "
+        "from the machine config; do not object to them, and judge kills_if only on whether it is concrete. A request to change "
         "the TREATMENT itself (e.g. add a correction) is not a revision: put it in new_hypothesis_for_pi instead."
         + '\nReply JSON: {"verdict": "approve" or "object", "blocking": ["..."], "message": "to the methodologist", '
         '"new_hypothesis_for_pi": null or "..."}',
