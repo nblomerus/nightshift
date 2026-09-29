@@ -142,3 +142,16 @@ def test_an_idea_already_decided_against_this_champion_is_not_proposed_again(spe
     decided = [t for t in Knowledge(kg, "bikeshare-lab").tests() if t["decision"]]
     if decided:  # the first run decided it: the second may not test it again
         assert not rig.db.execute("SELECT count(*) FROM slices").fetchone()[0]
+
+
+def test_an_idea_described_only_in_its_rationale_is_still_taken(spec_path, tmp_path):
+    idea = dict(key="new", name="weekend_profile", rationale=WEEKEND_IDEA["idea"])  # no "idea" field
+    rig, ctx, _ = run(llm(idea=idea), root=str(tmp_path / "r"), n_campaigns=1, rigspec=spec_path)
+    assert ctx["ideas"]["code:weekend_profile"]["idea"] == WEEKEND_IDEA["idea"]
+    assert rig.db.execute("SELECT count(*) FROM slices").fetchone()[0] == 1
+
+
+def test_a_pick_that_is_not_taken_is_never_dropped_silently(spec_path, tmp_path):
+    rig, ctx, _ = run(llm(idea=dict(key="new", name="x")), root=str(tmp_path / "r"), n_campaigns=1, rigspec=spec_path)
+    notes = [b for (b,) in rig.db.execute("SELECT body FROM messages WHERE body LIKE 'Picks not taken:%'")]
+    assert notes and "needs a name and a description" in notes[0]

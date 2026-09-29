@@ -84,20 +84,34 @@ def pi_plan(rig, seat, task, ctx):
         "should carry forward. "
         'Reply JSON: {"picks": [{"key": "...", "rationale": "..."}], "lesson": "..."}',
     )
-    picks = []
+    picks, dropped = [], []
     for p in out.get("picks", []):
+        if not isinstance(p, dict):
+            continue
         if p.get("key") in menu:
             picks.append(p)
-        elif p.get("key") == "new" and new_ideas and not any(q["key"].startswith("code:") for q in picks):
+        elif p.get("key") == "new" and new_ideas:
             name = re.sub(r"[^a-z0-9_]+", "_", str(p.get("name", "")).lower()).strip("_")[:40]
             key = f"code:{name}"
+            idea = str(p.get("idea") or p.get("rationale") or "").strip()  # models sometimes describe it in rationale
             decided = kg is not None and any(
                 t["change"] == key and t["decision"] and t["champion"] == kg_champion(ctx) for t in kg.tests()
             )
-            if len(name) >= 3 and p.get("idea") and not decided:
-                ctx["ideas"][key] = dict(name=name, idea=str(p["idea"])[:600])
+            if any(q["key"].startswith("code:") for q in picks):
+                dropped.append(f"{key}: only one new idea per campaign")
+            elif len(name) < 3 or not idea:
+                dropped.append(f"new idea {p.get('name')!r}: needs a name and a description")
+            elif decided:
+                dropped.append(f"{key}: already decided against this champion")
+            else:
+                ctx["ideas"][key] = dict(name=name, idea=idea[:600])
                 picks.append(dict(p, key=key))
+        else:
+            dropped.append(f"{p.get('key')!r}: not available this campaign")
+    dropped += [f"{p['key']}: more than two picks" for p in picks[2:]]
     picks = picks[:2]
+    if dropped:  # never silently: the PI (and the record) sees why a pick was not taken
+        rig.send(seat, seat, "Picks not taken: " + "; ".join(dropped))
     if out.get("lesson"):
         ctx["lessons"].append(f"(after campaign {ctx['campaign'] - 1}) {out['lesson']}")
     ctx["alpha_per_test"] = rig.spec["decision_standards"]["alpha_campaign"] / max(len(picks), 1)
