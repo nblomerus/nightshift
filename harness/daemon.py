@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import agents as S
+from harness.llm import recording_llm
 from state.rig import GuardError, Rig
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -139,6 +140,7 @@ def run(llm, root="runs/latest", max_ticks=40, n_campaigns=3, rigspec: str | Non
     judge = S.load_judge(spec)  # refuse a missing judge before anything is written
     if os.path.exists(root):
         shutil.rmtree(root)
+    llm = recording_llm(llm, os.path.join(root, "llm_calls.jsonl"))  # every prompt and reply, for the lab floor
     rig, ctx, transcript = Rig(root, spec), make_ctx(llm, judge), []
     Path(root, "rigspec.json").write_text(json.dumps(spec, indent=1))  # the dashboard reads this copy
     ctx["n_campaigns"] = n_campaigns
