@@ -109,22 +109,20 @@ describe("slices", () => {
 });
 
 describe("thinking bubbles", () => {
-  const reasoning = Array.from({ length: 60 }, (_, k) => `thought${k}`).join(" ");
+  const reasoning = Array.from({ length: 60 }, (_, k) => `Thought number ${k} is here.`).join(" ");
   const call = { seat: "pi", tier: "reasoning", s: 10, error: null, prompt: "p", reasoning, reply: "{}" };
 
-  it("rolls through the recorded reasoning as the call plays", () => {
-    const early = thoughtAt(call, 0.1);
-    const late = thoughtAt(call, 0.9); // the whole reasoning is shown by 85% of the beat
-    expect(early).toContain("thought0");
-    expect(late).toContain("thought59");
-    expect(late.startsWith("…")).toBe(true);
-    expect(early).not.toEqual(late);
+  it("moves one whole sentence at a time, at reading pace, through the recorded reasoning", () => {
+    const shown = new Set([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99].map((f) => thoughtAt(call, f, 12)));
+    expect(shown.size).toBe(5); // 12 display seconds / 2.5 per sentence
+    expect(thoughtAt(call, 0, 12)).toBe("Thought number 0 is here.");
+    expect(thoughtAt(call, 0.99, 12)).toBe("Thought number 59 is here."); // where the reasoning ended up
+    expect(thoughtAt(call, 0.1, 12)).toBe(thoughtAt(call, 0.15, 12)); // no sweep within a sentence's slot
   });
 
-  it("shows the latest streamed reasoning while a call is still running", () => {
-    expect(thoughtAt({ ...call, in_flight: true, s: null, reasoning: "Is the comparator explicit?" }, 0)).toBe(
-      "Is the comparator explicit?",
-    );
+  it("shows the latest complete sentence while a call is still running", () => {
+    const live = { ...call, in_flight: true, s: null, reasoning: "Is the comparator explicit? Yes it names the champ" };
+    expect(thoughtAt(live, 0)).toBe("Is the comparator explicit?");
   });
 
   it("titles a thinking seat's bubble with its task and fills it with the thought", () => {
@@ -132,7 +130,7 @@ describe("thinking bubbles", () => {
     const withCalls = { ...replay, calls: { "7": call }, beats: [...beats.slice(0, 2), b, ...beats.slice(3)] } as Replay;
     const bubble = sceneAt(withCalls, 12).bubbles.find((x) => x.seat === "methodologist")!;
     expect(bubble.title).toBe(b.text);
-    expect(bubble.text).toContain("thought");
+    expect(bubble.text).toMatch(/^Thought number \d+ is here\.$/);
   });
 });
 
