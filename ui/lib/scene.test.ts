@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { besideSpot, seatSpot, VAULT_SPOT, workstationSpot } from "./layout";
-import { beatIndexAt, BUBBLE_H, layoutBubbles, pipelineReached, sceneAt, stageAt, thoughtAt } from "./scene";
+import { beatIndexAt, BUBBLE_H, layoutBubbles, pipelineReached, ownWords, sceneAt, stageAt, thoughtAt } from "./scene";
 import type { Beat, Replay, Slice } from "./types";
 
 const seats = Object.fromEntries(
@@ -133,5 +133,19 @@ describe("thinking bubbles", () => {
     const bubble = sceneAt(withCalls, 12).bubbles.find((x) => x.seat === "methodologist")!;
     expect(bubble.title).toBe(b.text);
     expect(bubble.text).toContain("thought");
+  });
+});
+
+describe("own words", () => {
+  it("leaves out quoted prompt text, JSON and code, and keeps the seat's own reasoning", () => {
+    const r =
+      'Maybe include rationale. The message says "You may also propose ONE new idea... Pick it as {key}". ' +
+      'Reply {"picks": [{"key": "new", "name": "x"}]} then ```python\nprint(1)\n``` Lessons say screens gate.';
+    const out = ownWords(r);
+    expect(out).toContain("Maybe include rationale.");
+    expect(out).toContain("Lessons say screens gate.");
+    expect(out).not.toContain("You may also propose");
+    expect(out).not.toContain('"picks"');
+    expect(out).not.toContain("print(1)");
   });
 });

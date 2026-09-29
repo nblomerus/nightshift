@@ -45,11 +45,22 @@ export const THOUGHT_W = 236;
 export const THOUGHT_H = 78;
 const THOUGHT_CHARS = 150;
 
+// A seat's reasoning in its own words: models quote their prompt back to themselves ("You may also propose ONE new
+// idea..."), echo JSON and paste code; none of that says what the seat thinks, so the bubble leaves it out.
+export function ownWords(text: string): string {
+  let out = text.replace(/```[\s\S]*?(```|$)/g, " ").replace(/"[^"]{14,}"/g, "“…”");
+  for (let prev = ""; prev !== out; ) {
+    prev = out;
+    out = out.replace(/\{[^{}]*\}/g, "⟨…⟩"); // innermost JSON first, then its parents (the placeholder has no braces)
+  }
+  return out.replace(/⟨…⟩/g, "{…}").replace(/\s+/g, " ").trim();
+}
+
 // What a thinking seat is thinking at `frac` of its call: in replay, the stretch of its recorded reasoning that far in
 // (so the bubble keeps moving); for a call still running, the latest reasoning the stream reported.
 export function thoughtAt(call: Call | undefined, frac: number): string {
   if (!call) return "";
-  const text = (call.reasoning || "").replace(/\s+/g, " ").trim();
+  const text = ownWords(call.reasoning || "");
   if (!text) return call.in_flight ? "…" : call.reply ? call.reply.replace(/\s+/g, " ").slice(0, THOUGHT_CHARS) : "";
   const end = call.in_flight ? text.length : Math.max(THOUGHT_CHARS, Math.round(text.length * Math.min(1, frac / 0.85)));
   const cut = Math.min(end, text.length);
