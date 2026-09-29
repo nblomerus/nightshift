@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from agents.common import ask_json, evaluation_key, persona
+import re
+
+from agents.common import ask_json, change_desc, evaluation_key, persona
 
 
 # ---------------------------------------------------------------------------- PI
@@ -42,6 +44,7 @@ def pi_plan(rig, seat, task, ctx):
         )
         or "(none yet)"
     )
+    new_ideas = hasattr(J, "check_code")  # the judge can run seat-written code
     msgs = rig.inbox(seat)
     notes = "\n".join(f"- from {m['frm']}: {m['body'][:300]}" for m in msgs) or "(none)"
     out = ask_json(
@@ -60,28 +63,57 @@ def pi_plan(rig, seat, task, ctx):
         )
         + f"\n\nMeasured treatment SEs (for design choice):\n{vb}\n\n"
         + f"Messages to you:\n{notes}\n\n"
-        "Pick up to TWO changes to test confirmatorily this campaign; only the changes listed above are available. "
+        + (
+            "You may also propose ONE new idea that is not on the list: a feature computable from each station's "
+            "daily pickup history up to the forecast origin, the target dates and station coordinates. The experimenter "
+            'will write it as code. Pick it as {"key": "new", "name": "short_snake_case_name", "idea": "what the feature '
+            'is and why it should reduce the error, in 2-3 sentences", "rationale": "..."}. '
+            if new_ideas
+            else ""
+        )
+        + "Pick up to TWO changes in all to test confirmatorily this campaign; only the changes listed above are available. "
         "Do not pick changes already graded A. If nothing is worth testing, pick none. Also state one lesson the lab "
         "should carry forward. "
         'Reply JSON: {"picks": [{"key": "...", "rationale": "..."}], "lesson": "..."}',
     )
-    picks = [p for p in out.get("picks", []) if p.get("key") in menu][:2]
+    picks = []
+    for p in out.get("picks", []):
+        if p.get("key") in menu:
+            picks.append(p)
+        elif p.get("key") == "new" and new_ideas and not any(q["key"].startswith("code:") for q in picks):
+            name = re.sub(r"[^a-z0-9_]+", "_", str(p.get("name", "")).lower()).strip("_")[:40]
+            key = f"code:{name}"
+            decided = kg is not None and any(
+                t["change"] == key and t["decision"] and t["champion"] == kg_champion(ctx) for t in kg.tests()
+            )
+            if len(name) >= 3 and p.get("idea") and not decided:
+                ctx["ideas"][key] = dict(name=name, idea=str(p["idea"])[:600])
+                picks.append(dict(p, key=key))
+    picks = picks[:2]
     if out.get("lesson"):
         ctx["lessons"].append(f"(after campaign {ctx['campaign'] - 1}) {out['lesson']}")
     ctx["alpha_per_test"] = rig.spec["decision_standards"]["alpha_campaign"] / max(len(picks), 1)
     for i, p in enumerate(picks):
         key = p["key"]
-        sid = f"C{ctx['campaign']}-S{i + 1}-{key}"
+        sid = f"C{ctx['campaign']}-S{i + 1}-{key.replace(':', '_')}"
         rig.new_slice(
             sid,
-            J.MENU[key][0],
-            f"# {J.MENU[key][0]}\n\nChampion: {ctx['champion_desc']}\n\nRationale (PI): {p['rationale']}\n",
+            change_desc(ctx, key),
+            f"# {change_desc(ctx, key)}\n\nChampion: {ctx['champion_desc']}\n\nRationale (PI): {p.get('rationale', '')}\n",
         )
         ctx["primary_seed"][sid] = J.data_keys("primary", ctx["campaign"], i)[0]
         ctx["replication_seed"][sid] = J.data_keys("replication", ctx["campaign"], i)[0]
-        rig.advance(seat, sid, "hypothesis", note=p["rationale"][:120])
-        rig.queue(seat, rig.seat_for("methodologist"), "draft_prereg", sid, dict(key=key, rationale=p["rationale"]))
+        rig.advance(seat, sid, "hypothesis", note=str(p.get("rationale", ""))[:120])
+        rig.queue(
+            seat, rig.seat_for("methodologist"), "draft_prereg", sid, dict(key=key, rationale=p.get("rationale", ""))
+        )
     return dict(picks=[p["key"] for p in picks], lesson=out.get("lesson"))
+
+
+def kg_champion(ctx):
+    from state.knowledge import config_id
+
+    return config_id(ctx["champion"])
 
 
 def pi_read(rig, seat, msgs, ctx):

@@ -9,8 +9,10 @@ from agents.common import (
     PREREG_KEYS,
     REVISION_CAP,
     ask_json,
+    change_desc,
+    is_code,
     persona,
-    prereg_statement,
+    statement_for,
 )
 
 
@@ -30,13 +32,20 @@ def methodologist_draft(rig, seat, task, ctx):
         rig.spec["seats"][seat],
         persona(rig, seat),
         f"Draft a preregistration for this change to {ctx['champion_desc']}.\n"
-        f"The frozen judge implements EXACTLY this treatment and nothing else: '{J.MENU[key][0]}'. "
-        f"Its machine config (authoritative, locked with your prereg): treatment="
-        f"{json.dumps(dict(ctx['champion'], **J.MENU[key][1]))}, comparator={json.dumps(ctx['champion'])} "
-        "(naive inverse transforms, no bias corrections, no extra tuning). The statement naming both arms and "
-        "the decision rule is generated from this config; if you believe a variant is better, say so in "
-        "rationale — it would be a separate hypothesis.\n"
-        f"Decision standards are FIXED by the PI and not yours to set: SESOI {std['sesoi']:.1%} relative "
+        + (
+            f"The change is a NEW IDEA the experimenter will write as code: '{change_desc(ctx, key)}'. The locked config "
+            "will be the champion plus exactly that code, under this contract:\n"
+            f"{J.CODE_CONTRACT}\nThe statement naming both arms and the decision rule is generated; the code is locked "
+            "with it. If you believe a variant is better, say so in rationale: it would be a separate hypothesis.\n"
+            if is_code(key)
+            else f"The frozen judge implements EXACTLY this treatment and nothing else: '{J.MENU[key][0]}'. "
+            f"Its machine config (authoritative, locked with your prereg): treatment="
+            f"{json.dumps(dict(ctx['champion'], **J.MENU[key][1]))}, comparator={json.dumps(ctx['champion'])} "
+            "(naive inverse transforms, no bias corrections, no extra tuning). The statement naming both arms and "
+            "the decision rule is generated from this config; if you believe a variant is better, say so in "
+            "rationale — it would be a separate hypothesis.\n"
+        )
+        + f"Decision standards are FIXED by the PI and not yours to set: SESOI {std['sesoi']:.1%} relative "
         f"WAPE reduction; target effect for 80% power {std['target_effect']:.1%}; alpha per test "
         f"{ctx['alpha_per_test']:.3f}.\n"
         f"Estimand: relative reduction in {J.TARGET}, treatment vs comparator, "
@@ -50,7 +59,7 @@ def methodologist_draft(rig, seat, task, ctx):
     )
     pre = {k: out.get(k) for k in LLM_PREREG_KEYS}
     pre["hid"] = f"H-{key}"
-    pre["statement"] = prereg_statement(J, ctx["champion"], key, std, ctx["alpha_per_test"])
+    pre["statement"] = statement_for(ctx, key, std, ctx["alpha_per_test"])
     pre["design"] = pre["design"] if pre["design"] in J.DESIGNS else "A"
     pre["sesoi"], pre["target_effect"], pre["alpha"] = std["sesoi"], std["target_effect"], ctx["alpha_per_test"]
     pre["treatment_key"], pre["revision"] = key, (prev or {}).get("revision", -1) + 1

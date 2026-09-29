@@ -9,6 +9,26 @@ import re
 
 from judges import forecast_lab
 
+# A seat-proposed idea and the code the fake experimenter and replicator write for it (ROADMAP 5).
+WEEKEND_IDEA = dict(
+    key="new",
+    name="weekend_profile",
+    idea="Each station's own weekend-versus-weekday pickup ratio over the last 8 weeks, applied to weekend target days.",
+    rationale="stations differ in weekend use; the pooled day-of-week terms cannot see that",
+)
+WEEKEND_CODE = """```python
+import datetime as dt
+import numpy as np
+
+def features(view):
+    h = view["history"][:, -56:].astype(float)
+    days = [dt.date.fromordinal(int(o)) for o in view["history_dates"][-56:]]
+    wk = np.array([d.weekday() >= 5 for d in days])
+    ratio = np.log((h[:, wk].mean(1) + 0.1) / (h[:, ~wk].mean(1) + 0.1))
+    target_weekend = np.array([dt.date.fromordinal(int(o)).weekday() >= 5 for o in view["target_dates"]], float)
+    return (ratio[:, None] * target_weekend[None, :]).reshape(-1)
+```"""
+
 ORIGINAL_CHAMPION = "pooled ridge on demand lags 1-4 and 4/13-week rolling means"
 
 
@@ -27,9 +47,12 @@ def make_fake_llm(menu):
             screen = re.findall(r"^- ([a-z_]+): ([+-][0-9.]+)%", prompt.split("EXPLORATORY screen")[1], re.M)
             tested_a = set(re.findall(r"campaign \d+ ([a-z_]+) on .*grade A", prompt))
             picks = [k for k, v in screen if float(v) > 0.5 and k not in tested_a][:2]
+            chosen = [{"key": k, "rationale": f"top exploratory screen result ({k})"} for k in picks]
+            if "You may also propose ONE new idea" in prompt and len(chosen) < 2:
+                chosen.append(WEEKEND_IDEA)
             return json.dumps(
                 {
-                    "picks": [{"key": k, "rationale": f"top exploratory screen result ({k})"} for k in picks],
+                    "picks": chosen,
                     "lesson": "screens rank; only confirmatory tests count",
                 }
             )
@@ -54,6 +77,8 @@ def make_fake_llm(menu):
             return json.dumps({"answer": "The prereg is authoritative."})
         if "critic@" in who:
             return json.dumps({"verdict": "approve", "blocking": [], "message": "ok", "new_hypothesis_for_pi": None})
+        if ("experimenter@" in who or "replicator@" in who) and "as code" in prompt:
+            return WEEKEND_CODE
         if "experimenter@" in who:
             # strict: the statement must name the comparator the judge will actually run
             statement = prompt.split("Draft prereg statement:\n")[1].split("\n")[0]

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agents.common import ask_json, audit_locked, persona, slice_grade
+from agents.common import ask_json, audit_locked, change_desc, persona, slice_grade
 
 
 # ---------------------------------------------------------------------------- writer
@@ -20,7 +20,7 @@ def writer_write(rig, seat, task, ctx):
         rig.spec["seats"][seat],
         persona(rig, seat, "You may not change or soften the decision or the grade."),
         f"Write the finding for slice {sid}.\nPrereg statement: {pre.statement}\n"
-        f"Treatment actually run by the judge (describe THIS, nothing more): {ctx['judge'].MENU[rig.read_proof(sid, 'prereg_draft.json')['treatment_key']][0]}\nSESOI {pre.sesoi:.1%}; design "
+        f"Treatment actually run by the judge (describe THIS, nothing more): {change_desc(ctx, rig.read_proof(sid, 'prereg_draft.json')['treatment_key'])}\nSESOI {pre.sesoi:.1%}; design "
         f"{pre.design['name']} ({len(pre.design['origins'])} origins)\nKernel decision: {dec['decision']} — estimate "
         f"{dec['point']:.2%}, CI [{dec['lo']:.2%}, {dec['hi']:.2%}] at alpha {dec['alpha']:.4f}\n"
         f"Replication: {json.dumps(repl) if repl else 'not attempted (decision was not supported)'}\n"

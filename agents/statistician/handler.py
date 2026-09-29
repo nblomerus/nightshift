@@ -14,6 +14,7 @@ from agents.common import (
     judge_digest,
     require_judge,
     slice_grade,
+    treatment_of,
 )
 from science import kernel as sk
 from state.rig import GuardError
@@ -34,7 +35,7 @@ def promote_champion(rig, ctx):
         return None
     best = max(wins, key=lambda e: e["point"])
     before = ctx["champion_desc"]
-    ctx["champion"] = dict(ctx["champion"], **ctx["judge"].MENU[best["key"]][1])
+    ctx["champion"] = dict(ctx["locked"][best["slice"]].treatment)  # exactly what was tested and replicated
     ctx["champion_desc"] = describe_config(ctx["judge"], ctx["champion"])
     ctx["champion_history"].append(
         dict(
@@ -94,7 +95,7 @@ def statistician_power_controls(rig, seat, task, ctx):
     pre = rig.read_proof(sid, "prereg_draft.json")
     rng, cache, J = np.random.default_rng(0), ctx["cache"], ctx["judge"]
     ses, pts = [], []
-    treat = dict(ctx["champion"], **J.MENU[pre["treatment_key"]][1])
+    treat = treatment_of(ctx, pre["treatment_key"], sid)
     pilot = J.data_keys("pilot")
     for s in pilot:
         # pilot panels are never reused for confirmation; they only plan the design
@@ -140,6 +141,7 @@ def statistician_power_controls(rig, seat, task, ctx):
     pos = sk.run_test(mk(J.POSITIVE_CONTROL, pos_comparator), run, rng)["decision"]
     neg = sk.run_test(mk(J.PLACEBO), run, rng)["decision"]
     admissible = pos == "supported" and neg != "supported" and not leak
+    power_min = rig.spec["decision_standards"].get("power_min", 0.8)  # the rigspec's standard (guard name keeps 0.8)
     # judge-specific guards the rigspec requires before lock (e.g. a censoring mask for latent-demand models)
     design_ok = J.design_checks(treat, pre["design"], J.data_keys("primary")[0]) if hasattr(J, "design_checks") else {}
     rep = dict(
@@ -168,7 +170,10 @@ def statistician_power_controls(rig, seat, task, ctx):
     if leak:
         with contextlib.suppress(GuardError):  # refusal is logged by the rig; route back
             rig.advance(
-                seat, sid, "controls_passed", checks={"p_decisive>=0.8": p_decisive >= 0.8, "controls_admissible": False}
+                seat,
+                sid,
+                "controls_passed",
+                checks={"p_decisive>=0.8": p_decisive >= power_min, "controls_admissible": False, **design_ok},
             )
         rig.advance(seat, sid, "parked", checks={"no_larger_design": True}, note="leak canary fired")
         rig.send(
@@ -179,13 +184,13 @@ def statistician_power_controls(rig, seat, task, ctx):
             sid,
         )
         return rep
-    if p_decisive < 0.8 or not admissible:
+    if p_decisive < power_min or not admissible:
         with contextlib.suppress(GuardError):  # refusal is logged by the rig; route back
             rig.advance(
                 seat,
                 sid,
                 "controls_passed",
-                checks={"p_decisive>=0.8": p_decisive >= 0.8, "controls_admissible": admissible},
+                checks={"p_decisive>=0.8": p_decisive >= power_min, "controls_admissible": admissible, **design_ok},
             )
         order = list(J.DESIGNS)
         larger = order[order.index(pre["design"]) + 1 :]
@@ -223,7 +228,7 @@ def statistician_power_controls(rig, seat, task, ctx):
         hid=pre["hid"],
         statement=pre["statement"],
         estimand=f"relative reduction in {J.TARGET}, two-way bootstrap",
-        treatment=dict(ctx["champion"], **J.MENU[pre["treatment_key"]][1]),
+        treatment=treatment_of(ctx, pre["treatment_key"], sid),
         comparator=dict(ctx["champion"]),
         primary_metric="WAPE",
         unit="series x origin",
