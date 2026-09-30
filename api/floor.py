@@ -164,6 +164,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path == "/api/progress":
+            from api.progress import build_progress
+
+            runs = list_runs(os.path.dirname(os.path.abspath(self.root)))
+            rig = q.get("rig", [runs[0]["rig"] if runs else ""])[0]
+            repo = os.path.dirname(os.path.dirname(os.path.abspath(self.root)))
+            return self._json(build_progress(repo, os.path.basename(rig)))
         if u.path == "/api/runs":
             return self._json(list_runs(os.path.dirname(os.path.abspath(self.root))))
         if u.path in ("/api/replay", "/api/events"):

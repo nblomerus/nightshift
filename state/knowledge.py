@@ -65,9 +65,10 @@ class Knowledge:
         return json.loads(row[0]) if row else None
 
     # ------------------------------------------------------------------ writes (from the kernel's records)
-    def begin_run(self, name: str, judge: str) -> str:
-        rid = f"run:{name}@{int(time.time() * 1000)}"
-        self.node(rid, "run", name, rig=self.rig, judge=judge, started=time.time())
+    def begin_run(self, name: str, judge: str, started: float | None = None) -> str:
+        started = time.time() if started is None else started
+        rid = f"run:{name}@{int(started * 1000)}"
+        self.node(rid, "run", name, rig=self.rig, judge=judge, started=started)
         self.commit()
         return rid
 
@@ -138,7 +139,7 @@ class Knowledge:
     def tests(self, comparator: dict | None = None) -> list[dict]:
         """Every recorded test of this rig (optionally only those against one champion), oldest first."""
         q = (
-            "SELECT t.id, t.label, t.props, tc.dst, ag.dst, r.label, ag.campaign FROM nodes t "
+            "SELECT t.id, t.label, t.props, tc.dst, ag.dst, r.label, ag.campaign, r.props FROM nodes t "
             "JOIN edges tc ON tc.src = t.id AND tc.type = 'TESTS' JOIN edges ag ON ag.src = t.id AND ag.type = 'AGAINST' "
             "JOIN edges ir ON ir.src = t.id AND ir.type = 'IN' JOIN nodes r ON r.id = ir.dst "
             "WHERE t.type = 'test' AND json_extract(t.props, '$.rig') = ?"
@@ -148,7 +149,7 @@ class Knowledge:
             q += " AND ag.dst = ?"
             args.append(config_id(comparator))
         out = []
-        for tid, sid, props, change, champ, run_name, campaign in self.db.execute(q + " ORDER BY ag.ts", args):
+        for tid, sid, props, change, champ, run_name, campaign, rprops in self.db.execute(q + " ORDER BY ag.ts", args):
             p = json.loads(props)
             out.append(
                 dict(
@@ -158,9 +159,11 @@ class Knowledge:
                     champion=champ,
                     run=run_name,
                     campaign=campaign,
+                    run_started=json.loads(rprops).get("started"),
                     **p,
                 )
             )
+        out.sort(key=lambda t: (t["run_started"] or 0, t["campaign"] or 0, t["slice"]))  # when it really happened
         return out
 
     def is_repeat(self, treatment: dict, comparator: dict, evaluation: str, data_key) -> bool:

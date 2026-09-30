@@ -151,6 +151,25 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
     return status
 
 
+DIGEST_HOUR = 21  # local time: one digest a day, after this hour
+
+
+def maybe_digest(state, alerts, repo_root, rig, now=None):
+    """Once a day (after DIGEST_HOUR), write knowledge/digest-<day>.md and ping it."""
+    from api.progress import build_progress, digest_text
+
+    now = now or dt.datetime.now()
+    day = now.date().isoformat()
+    if now.hour < DIGEST_HOUR or state.get("digest_day") == day:
+        return None
+    text = digest_text(build_progress(repo_root, rig), day)
+    with open(os.path.join(repo_root, "knowledge", f"digest-{day}.md"), "w") as f:
+        f.write(text + "\n")
+    alert(alerts, "daily digest", text.replace("\n", " | "))
+    state["digest_day"] = day
+    return text
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m ops.labd", description=__doc__.split("\n\n")[0])
     ap.add_argument("--rigspec", default=os.path.join(REPO_ROOT, "rigs", "bikeshare-lab.json"))
@@ -184,7 +203,12 @@ def main(argv=None):
     )
     while True:
         t0 = time.time()
+        state.update(last_start=t0, every=a.every, status="running")
+        with open(state_path, "w") as f:
+            json.dump(state, f, indent=1, default=str)
         status = cycle(llm, a.rigspec, knowledge, a.runs_dir, a.campaigns, state, alerts, a.max_idle)
+        state["status"] = "waiting" if status != "goal" else "goal reached"
+        maybe_digest(state, alerts, REPO_ROOT, spec.get("rig", "rig"))
         with open(state_path, "w") as f:
             json.dump(state, f, indent=1, default=str)
         if status == "goal":
