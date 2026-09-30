@@ -23,7 +23,8 @@ def _read(path):
 def import_run(kg, root, judge):
     ledger = _read(os.path.join(root, "ledger.json")) or {}
     db = sqlite3.connect(f"file:{os.path.join(root, 'rig.db')}?mode=ro", uri=True)
-    run = kg.begin_run(os.path.basename(os.path.abspath(root)) + " (imported)", judge_digest(judge))
+    first = db.execute("SELECT min(ts) FROM slice_events").fetchone()[0]  # when the run really happened
+    run = kg.begin_run(os.path.basename(os.path.abspath(root)) + " (imported)", judge_digest(judge), started=first)
     promoted = {h["campaign"]: h for h in ledger.get("champion_history", [])}
     champion = dict(judge.BASELINE)
     kg.champion(champion, describe_config(judge, champion))

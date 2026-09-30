@@ -1,5 +1,9 @@
 "use client";
 
+import Link from "next/link";
+
+import { labStatus, useProgress } from "./Progress";
+
 import type { Mode } from "@/lib/useRun";
 import type { RunInfo } from "@/lib/types";
 
@@ -41,6 +45,7 @@ export function TopBar(props: {
   onHelp: () => void;
 }) {
   const { campaign, campaigns, activeSlice, beat, beats, runs, run, onRun, mode, onMode, connected, onHelp } = props;
+  const lab = labStatus(useProgress(undefined, 60_000));
   return (
     <header className="flex h-16 shrink-0 items-center gap-4 border-b-2 border-[#1B2444] bg-[#0B1122] px-5">
       <Moon />
@@ -49,6 +54,15 @@ export function TopBar(props: {
         <span className="text-[12px] text-[#AAB4CA]">Autonomous ML Research Lab</span>
       </div>
       <div className="flex-1" />
+      <Link
+        href="/progress"
+        className="flex h-11 items-center gap-2 rounded-md border border-[#263255] bg-[#10162B] px-3 text-[13px] hover:border-[#53648E]"
+        style={{ color: lab.tone }}
+        title="The lab's progress across runs and days"
+      >
+        <span className="h-2 w-2 rounded-full" style={{ background: lab.tone }} />
+        {lab.text} · Progress
+      </Link>
       <Stat label="Campaign">
         {campaign} <span className="text-[#AAB4CA]">/ {campaigns}</span>
       </Stat>
