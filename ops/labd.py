@@ -199,6 +199,11 @@ def launchd_plist(every):
     label = "com.nightshift.lab"
     cmd = f"cd {REPO_ROOT} && make labd EVERY={every}"
     log = os.path.join(REPO_ROOT, "knowledge", "labd.log")
+    home = os.path.expanduser("~")
+    # launchd starts with a bare PATH: pyenv (which the Makefile and a shell's startup files call) must be on it
+    path = ":".join(
+        [f"{home}/.pyenv/bin", f"{home}/.pyenv/shims", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+    )
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -210,6 +215,8 @@ def launchd_plist(every):
     <string>-ic</string>
     <string>{cmd}</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>{path}</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>ThrottleInterval</key><integer>300</integer>

@@ -84,3 +84,9 @@ def test_the_lab_stops_at_its_goal(spec_dir, tmp_path):
     assert go(spec_dir, tmp_path, idle, state, goal=0.15) == "running"  # the baseline does not beat itself by 15%
     assert go(spec_dir, tmp_path, idle, state, goal=-1.0) == "goal"
     assert state["goal"]["met"] and [a["kind"] for a in alerts(tmp_path)][-1] == "goal reached"
+
+
+def test_the_launchd_job_can_find_pyenv():
+    xml = labd.launchd_plist(3600)
+    assert ".pyenv/bin" in xml and ".pyenv/shims" in xml and "make labd EVERY=3600" in xml
+    assert "<key>SuccessfulExit</key><false/>" in xml  # restarted after a failure, not after reaching the goal
