@@ -63,10 +63,11 @@ def test_a_stall_pings_once(spec_dir, tmp_path):
     assert state["idle"] == 3 and len(stalls) == 1
 
 
-def test_a_data_request_pings_once(spec_dir, tmp_path):
-    ask, state = pi({"picks": [], "lesson": "l", "needs_external_data": "Daily weather forecasts for Chicago"}), {}
-    go(spec_dir, tmp_path, ask, state)
-    go(spec_dir, tmp_path, ask, state)
+def test_a_data_request_pings_once_a_day_however_it_is_worded(spec_dir, tmp_path):
+    state = {}
+    first = pi({"picks": [], "lesson": "l", "needs_external_data": "Daily weather forecasts for Chicago"})
+    go(spec_dir, tmp_path, first, state)
+    go(spec_dir, tmp_path, pi({"picks": [], "lesson": "l", "needs_external_data": "Weather and events"}), state)
     needs = [a for a in alerts(tmp_path) if a["kind"] == "needs data"]
     assert len(needs) == 1 and "weather" in needs[0]["message"]
 
@@ -90,3 +91,13 @@ def test_the_launchd_job_can_find_pyenv():
     xml = labd.launchd_plist(3600)
     assert ".pyenv/bin" in xml and ".pyenv/shims" in xml and "make labd EVERY=3600" in xml
     assert "<key>SuccessfulExit</key><false/>" in xml  # restarted after a failure, not after reaching the goal
+
+
+def test_open_requests_are_in_the_pis_brief_so_it_does_not_ask_again(tmp_path):
+    from state.knowledge import Knowledge
+
+    kg = Knowledge(str(tmp_path / "kg.db"), "lab")
+    run_id = kg.begin_run("r", "j")
+    kg.request(run_id, 1, "Daily weather forecasts for Chicago")
+    brief = kg.brief(bj.BASELINE, "base", [])
+    assert "already sent to the owner" in brief and "Daily weather forecasts" in brief

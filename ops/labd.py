@@ -123,14 +123,14 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
     state["idle"] = 0 if tested else state.get("idle", 0) + 1
     state["runs"] = state.get("runs", 0) + 1
     log(f"{name}: {tested} slice(s) tested or stopped; idle streak {state['idle']}")
-    for r in ctx.get("external_requests", []):
-        alert(
-            alerts,
-            "needs data",
-            f"The PI asks for data the lab does not have: {r['request']}",
-            key=f"need:{r['request'][:120]}",
-            seen=seen,
-        )
+    # One "needs data" ping a day while requests are open with the owner, however the PI words them.
+    reqs = ctx.get("external_requests", [])
+    if reqs and time.time() - state.get("last_data_ping", 0) >= DATA_PING_EVERY:
+        msg = "The PI asks for data the lab does not have: " + reqs[-1]["request"]
+        if len(reqs) > 1:
+            msg += f" (asked {len(reqs)} times this run)"
+        alert(alerts, "needs data", msg)
+        state["last_data_ping"] = time.time()
     if state["idle"] >= max_idle:
         msg = f"{state['idle']} runs in a row tested nothing (last: {name}). The lab needs new direction or data."
         alert(alerts, "stalled", msg, key=f"stall:{state['runs'] - state['idle']}", seen=seen)
@@ -151,6 +151,7 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
     return status
 
 
+DATA_PING_EVERY = 24 * 3600  # seconds between "needs data" pings while a request is open with the owner
 DIGEST_HOUR = 21  # local time: one digest a day, after this hour
 
 

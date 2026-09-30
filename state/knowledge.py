@@ -234,6 +234,19 @@ class Knowledge:
                 "- Not available this campaign, already decided against this champion on the same data under the same "
                 f"judge (re-running reproduces the answer): {', '.join(unavailable)}."
             )
+        asked = [
+            r[0]
+            for r in self.db.execute(
+                "SELECT label FROM nodes WHERE type='request' AND json_extract(props, '$.rig') = ? "
+                "ORDER BY created DESC LIMIT 3",
+                (self.rig,),
+            )
+        ]
+        if asked:
+            lines.append(
+                "- Data requests already sent to the owner (do not ask again; keep testing what the data allows):"
+            )
+            lines += [f"  - {a[:200]}" for a in asked]
         scr = self.screens(champion)
         if scr:
             lines.append(
