@@ -297,12 +297,23 @@ for every origin, so derive everything from the view; it must be deterministic."
 
 
 def evaluation_key():
-    """What a result depends on besides the config: the scoring semantics and the data. Knowledge-graph repeats key on
-    this, so upgrading the judge's capabilities does not re-open decided tests; the lock still stamps the full digest."""
+    """What a result depends on besides its config: the scoring version, the data of every month up to the last scored
+    confirmation month (a later month or new snapshots change no existing score), and the censoring mask of any scored
+    month that is masked. Knowledge-graph repeats key on this, so neither new judge capabilities nor the daily
+    censoring refresh re-open decided tests, while a new confirmation month or a newly masked one does. Locks stamp
+    the full digest."""
+    panel = load_panel()
+    with open(os.path.join(CONFIG["root"], "manifest.json")) as f:
+        months = json.load(f)["months"]
+    scored = sorted({m for d in DESIGNS.values() for m in d["origins"]})
+    last = scored[-1] if scored else ""
     h = hashlib.sha256(EVAL_VERSION.encode())
-    for path in FILES[2:]:  # the data files
-        with open(path, "rb") as f:
-            h.update(f.read())
+    for m in sorted(months):
+        if m <= last:
+            h.update(f"{m}:{months[m]['sha256']};".encode())
+    for m in scored:
+        if masked(panel, m):
+            h.update(m.encode() + panel["C"][:, _month_days(panel, m)].tobytes())
     return h.hexdigest()
 
 
