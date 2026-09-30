@@ -85,14 +85,27 @@ def test_code_is_described_by_name_and_hash(root):
     assert text.startswith(bj.BASELINE_DESC) and "seat-written feature 'holiday flags' (code sha " in text
 
 
-def test_the_evaluation_key_follows_the_data_not_the_judge_code(root):
+def test_the_evaluation_key_follows_only_data_that_changes_a_score(root):
     before = bj.evaluation_key()
-    manifest = root / "manifest.json"
-    m = json.loads(manifest.read_text())
-    m["touched"] = True
-    manifest.write_text(json.dumps(m))
+    first, m_orig = None, None
+    censor = root / "censor_day.csv.gz"
+    import gzip
+
+    with gzip.open(censor, "wt") as f:  # snapshots for a day no scored month uses: no score changes
+        f.write("station,date,empty_minutes,coverage\nStation 00 & Fixture Ave,2021-03-01,0,1.0\n")
+    bj.configure(dict(root=str(root)))
     try:
+        assert bj.evaluation_key() == before
+        manifest = root / "manifest.json"
+        m = json.loads(manifest.read_text())
+        first = min(m["months"])
+        m_orig = m["months"][first]["sha256"]
+        m["months"][first]["sha256"] = "changed"  # the data of a month that scored results depend on
+        manifest.write_text(json.dumps(m))
         assert bj.evaluation_key() != before
     finally:
-        m.pop("touched")
-        manifest.write_text(json.dumps(m, indent=1, sort_keys=True))
+        censor.unlink()
+        ing_manifest = json.loads((root / "manifest.json").read_text())
+        ing_manifest["months"][first]["sha256"] = m_orig
+        (root / "manifest.json").write_text(json.dumps(ing_manifest, indent=1, sort_keys=True))
+        bj.configure(dict(root=str(root)))
