@@ -115,6 +115,13 @@ class Knowledge:
         self.edge(lid, run, "FROM", run, campaign)
         self.commit()
 
+    def request(self, run: str, campaign: int, text: str):
+        """The PI asked for data the lab does not have (the supervisor pings the owner)."""
+        rid = "request:" + hashlib.sha256(text.encode()).hexdigest()[:16]
+        self.node(rid, "request", text, rig=self.rig)
+        self.edge(rid, run, "FROM", run, campaign)
+        self.commit()
+
     # ------------------------------------------------------------------ reads
     def current_champion(self) -> tuple[dict, str] | None:
         """The champion the latest promotion in this rig produced (None: never promoted)."""

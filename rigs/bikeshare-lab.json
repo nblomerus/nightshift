@@ -320,6 +320,11 @@
    "sesoi": 0.02,
    "alpha": 0.05,
    "rule": "pooled two-way bootstrap over stations x scored months, champion vs the baseline locked with it; kernel decide() at this SESOI"
+  },
+  "goal": {
+   "relative_wape_reduction": 0.15,
+   "rule": "the lab stops and pings the owner when the champion beats the original baseline by at least this much on the design-B confirmation months: the kernel's paired two-way bootstrap CI lower bound (alpha 0.05) at or above it",
+   "set_by": "owner, 2026-09-30 (target effect)"
   }
  }
 }

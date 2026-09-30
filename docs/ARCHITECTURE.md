@@ -71,6 +71,13 @@ the code. The frozen judge adds the returned columns to the champion's GLM, so a
 a menu change. The replicator writes its own implementation from the prereg text alone; it counts only if that code
 passes the checks and the decision agrees. A promoted champion carries its code forward verbatim.
 
+## The continuous lab (ops/labd.py)
+`make labd` (or the launchd job it prints) runs the lab until its goal: refresh data, one lab run with the knowledge
+graph, then a kernel check of the champion against the original baseline on the design-B confirmation months. It
+pings the owner once per event (macOS notification + `knowledge/alerts.jsonl`) when the goal is reached (it then
+stops), the PI asks for data the lab does not have (`needs_external_data`), runs in a row test nothing (stall), or a
+run crashes. The goal lives in the rigspec's decision standards.
+
 ## Knowledge graph (state/knowledge.py)
 The lab's memory across runs, one SQLite graph per rig (`knowledge/<rig>.db`, gitignored). After every campaign
 the daemon records the kernel's records: each test (change, champion, judge digest, data key, design, decision,

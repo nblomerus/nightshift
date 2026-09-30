@@ -17,6 +17,7 @@ TARGET
     ui                         The lab UI (Next.js) on :$$UI_PORT; needs make floor running
     ui-check                   Lint, typecheck, test and build the lab UI (CI parity)
     replay                     Build a self-contained replay page for RUN
+    labd                       Run the lab continuously until its goal; pings on goal, data needs, stalls (EVERY=3600)
     knowledge                  What the lab knows across runs: the PI's brief (RIGSPEC=rigs/...; JSON=1 for the graph)
     calibrate                  Lab self-calibration benchmark (planted-truth hypotheses, ~3 min)
     protocols                  Promotion-protocol benchmark (ratchet vs gates, ~4 min)
@@ -83,7 +84,7 @@ install:
 pre-commit:
 	pre-commit install
 
-.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols knowledge collect ingest censor lock-month score-month ui-install ui ui-check clean
+.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols labd knowledge collect ingest censor lock-month score-month ui-install ui ui-check clean
 
 # Non-mutating lint + format check — mirrors the CI `lint` job. Use `make ruff` to autofix.
 check:
@@ -115,6 +116,9 @@ floor:
 
 replay:
 	$(VENV_PYTHON) -m ops.nightshift floor build $(RUN) $(RUN)/replay.html
+
+labd:
+	$(VENV_PYTHON) -m ops.labd --rigspec rigs/bikeshare-lab.json --every $(or $(EVERY),3600)
 
 knowledge:
 	$(VENV_PYTHON) -m ops.nightshift knowledge $(if $(RIGSPEC),--rigspec $(RIGSPEC)) $(if $(JSON),--json) $(if $(IMPORT),--import $(IMPORT))
