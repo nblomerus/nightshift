@@ -189,6 +189,15 @@ commit and push `forecasts/chi/<L+2>/`. `make ingest censor score-month SYSTEM=c
 published writes `scores/chi/<L+2>.json`. The lock's `created_at` is checked against UTC midnight on the first of
 the month, which is earlier than midnight in any US time zone.
 
+**Challengers (owner decision, 2026-09-30: take the ~5 % backtest leads to the prospective test).** The lock also
+forecasts with up to four challengers: tests against the current champion in the knowledge graph whose backtest CI
+lies above zero but that the kernel did not support at the backtest SESOI, best point first, one per treatment. Each
+config (seat-written code included) is read back from its run's `prereg_locked.json` and must match the graph's
+config id, then is written as `challenger-<name>.csv` and hashed into `lock.json` with its backtest estimate. Scoring
+compares each challenger with the baseline at `alpha / k` (k challengers in that lock) and the prospective SESOI,
+and pools each challenger over every month it was locked in. A challenger never changes the champion; its record is
+evidence the lab and the owner can act on. `--no-challengers` locks the champion and baseline only.
+
 ### 8f. Foundation-model challenger (optional)
 - A zero-shot pretrained time-series model as a MENU treatment, behind an optional dependency group, run in the
   item-5 sandbox once that exists.
