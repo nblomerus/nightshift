@@ -75,7 +75,12 @@ halve or double pickups at the nearest dock) moves system-wide WAPE by little, l
 for it, it closes a question the lab keeps raising, and a station-level effect can feed later work (an event-aware
 prospective forecast for the stations affected). Acceptance step 1 measures the affected share before any campaign.
 
-## 7. Build (one PR)
+**Measured (2026-10-02, first real snapshot):** 18,455 permits kept, 4,234 dropped (no processed date, i.e.
+cancelled before processing, or no coordinates). Over the 24 latest target months, 3.2 % of universe station-days
+have a known event within 400 m: 6–9 % in June to September, under 0.5 % in January to April. Counting events that
+were not yet known at the origin would add about a fifth more, which is the share the point-in-time rule withholds.
+
+## 7. Build (one PR) — built in 0.24.0
 - ingest + snapshot + manifest; judge feature; menu item; `data_notes` line; supervisor refresh hook.
 - **Acceptance** (offline, on a synthetic permit fixture):
   - PIT: an event processed after `as_of` is invisible at that origin, visible at a later one; a permit's status

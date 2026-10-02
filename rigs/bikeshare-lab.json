@@ -5,7 +5,8 @@
   "Weather is out of scope: no forecast reaches the 32-62 day horizon, climatology is already in the seasonal features, and observed weather for the target month is a leak (docs/specs/bikeshare.md §3).",
   "Station availability (the censoring mask) and capacity history exist only from the lab's own GBFS snapshots, collected every 5 minutes since 2026-09-28. Nobody publishes earlier history. The first fully masked trip month is 2026-10, published in early November; the mask grows by itself, so do not ask for it.",
   "Trip history (2021-02 onward) is ingested automatically each month when Divvy publishes it.",
-  "Things the owner could plausibly add, if one would change what the lab can test: a public events calendar, planned station openings or closures, system-wide fare or policy changes."
+  "Street events (CDOT festival, parade and athletic permits) are on the menu as street_events: an event counts from its permit's processed date, within 400 m (docs/specs/bikeshare-events.md). Events in parks (Lollapalooza, Air & Water Show) are not in this source, and works permits cannot be known two months ahead, so do not ask for either.",
+  "Things the owner could plausibly add, if one would change what the lab can test: planned station openings or closures, system-wide fare or policy changes."
  ],
  "judge": "judges.bikeshare",
  "judge_config": {

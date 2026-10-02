@@ -1,7 +1,8 @@
 """The lab, run continuously: keep testing ideas until the goal is reached, and ping the owner when it needs them.
 
 Each cycle:
-  1. refresh the data (new trip months, the censoring table from collected snapshots; failures are logged, not fatal);
+  1. refresh the data (new trip months, the censoring table from collected snapshots, a monthly street-events
+     snapshot; failures are logged, not fatal);
   2. run one lab run (several campaigns) with the knowledge graph, so it continues from everything learned;
   3. check, with the kernel, whether the champion now beats the original baseline by the rigspec's goal;
   4. ping the owner, once per event, when: the goal is reached (and stop), the PI asks the owner for something the lab
@@ -93,6 +94,14 @@ def refresh_data(judge_config, system, log):
             reduce_all(gbfs, os.path.join(root, "censor_day.csv.gz"), today=today)
     except Exception as e:
         log(f"censor table skipped: {type(e).__name__}: {e}")
+    try:  # street-event permits: a dated snapshot a month (docs/specs/bikeshare-events.md)
+        from ops import events_ingest
+
+        events = os.path.join(os.path.dirname(os.path.dirname(root)), "events", system)
+        if system in events_ingest.SYSTEMS and events_ingest.due(events):
+            events_ingest.ingest(system, events, log=log)
+    except Exception as e:
+        log(f"events snapshot skipped: {type(e).__name__}: {e}")
 
 
 def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idle=2, refresh=True, log=print):

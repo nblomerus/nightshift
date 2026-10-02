@@ -1,7 +1,8 @@
 """Synthetic bike-share trips in the operator's (Lyft) schema, served through a stub S3 `get`. Real trip data may
 not be redistributed, so the tests run on this. Planted: station-specific day-of-week profiles, strong annual
 seasonality, holiday dips, 8 %/year growth, 20 % dockless trips, the 2025-06 station-id switch (names carry
-over) and a macOS resource fork inside each zip."""
+over) and a macOS resource fork inside each zip. Optionally, street events (CDOT permits, served through a stub
+Socrata `get`) that raise pickups at stations within 400 m while they run."""
 
 from __future__ import annotations
 
@@ -46,8 +47,47 @@ def published_at(month):
     return dt.datetime(int(nxt[:4]), int(nxt[4:]), day, 19, 30, tzinfo=dt.UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
-def expected_pickups(first="202102", last="202508", n_stations=20, seed=0):
-    """station name -> date -> planted mean pickups, and station coordinates."""
+EVENT_LIFT = 2.5  # planted: pickups at a station within 400 m of a running street event
+
+
+def street_events(first="202102", last="202508", n_stations=20, seed=0, per_month=6):
+    """Planted street events beside random stations: most processed 40-120 days ahead (known at the origin), a
+    fifth processed 3 days ahead (real, but unknowable two months out), plus permits the ingest must drop."""
+    _, lat, lon = _stations(n_stations, seed)
+    rng = np.random.default_rng(seed + 7)
+    out = []
+    for m in months(first, last):
+        days = month_dates(m)
+        for k in range(per_month):
+            i, start = int(rng.integers(n_stations)), days[int(rng.integers(len(days)))]
+            lead = 3 if k % 5 == 4 else int(rng.integers(40, 121))
+            out.append(
+                dict(
+                    uid=f"{m}{k:02d}",
+                    kind=("Festival", "Parade", "Athletic")[k % 3],
+                    start=start,
+                    end=start + dt.timedelta(days=int(rng.integers(0, 3))),
+                    processed=start - dt.timedelta(days=lead),
+                    lat=lat[i] + 0.0005,
+                    lon=lon[i],
+                )
+            )  # fmt: skip  (about 55 m north of the station)
+    return out
+
+
+def _stations(n_stations, seed):
+    rng = np.random.default_rng(seed)
+    level = rng.lognormal(1.2, 0.5, n_stations)
+    rng.random(n_stations)  # weekend lovers (drawn in expected_pickups' order)
+    cluster = rng.integers(0, 4, n_stations)
+    lat = 41.85 + 0.03 * cluster + rng.normal(0, 0.004, n_stations)
+    lon = -87.65 + 0.02 * (cluster % 2) + rng.normal(0, 0.004, n_stations)
+    return level, lat, lon
+
+
+def expected_pickups(first="202102", last="202508", n_stations=20, seed=0, events=None):
+    """station name -> date -> planted mean pickups, and station coordinates. `events`: street events that lift
+    pickups at stations within 400 m while they run."""
     rng = np.random.default_rng(seed)
     level = rng.lognormal(1.2, 0.5, n_stations)
     weekend_lover = rng.random(n_stations) < 0.5
@@ -66,12 +106,20 @@ def expected_pickups(first="202102", last="202508", n_stations=20, seed=0):
             dow = np.where(weekend_lover, 1.5 if wk else 0.8, 0.6 if wk else 1.15)
             hol = 0.6 if d in hols else 1.0
             means[d] = level * season * growth * dow * hol
+    for ev in events or ():
+        near = ((lat - ev["lat"]) * 111_320) ** 2 + ((lon - ev["lon"]) * 111_320 * np.cos(np.radians(41.9))) ** 2
+        lift = np.where(near <= 400**2, EVENT_LIFT, 1.0)
+        d = ev["start"]
+        while d <= ev["end"]:
+            if d in means:
+                means[d] = means[d] * lift
+            d += dt.timedelta(days=1)
     return names, lat, lon, means
 
 
-def trip_zips(first="202102", last="202508", n_stations=20, seed=0):
+def trip_zips(first="202102", last="202508", n_stations=20, seed=0, events=None):
     """{yyyymm: (zip bytes, published_at)}"""
-    names, lat, lon, means = expected_pickups(first, last, n_stations, seed)
+    names, lat, lon, means = expected_pickups(first, last, n_stations, seed, events)
     rng = np.random.default_rng(seed + 1)
     out = {}
     for m in months(first, last):
@@ -143,3 +191,35 @@ def gbfs_day(root, day, stations, empty_polls=None, missing_polls=None, every=30
                     continue
                 bikes = 0 if k < empty_polls.get(s, 0) else 5
                 w.writerow([int(start) + k * every, s, int(start) + k * every, bikes, 10 - bikes, 1, 1, 1])
+
+
+def permit_rows(events, junk=True):
+    """Socrata rows (CDOT schema, strings) for `events`, plus permits the ingest must drop: no processed date (an
+    application cancelled before processing), and no coordinates."""
+
+    def iso(d):
+        return f"{d.isoformat()}T00:00:00.000"
+
+    rows = [dict(uniquekey=e["uid"], worktypedescription=e["kind"], applicationname=f"Fest {e['uid']}",
+                 applicationprocesseddate=iso(e["processed"]), applicationstartdate=iso(e["start"]),
+                 applicationenddate=iso(e["end"]), latitude=str(e["lat"]), longitude=str(e["lon"]),
+                 streetclosure="Full") for e in events]  # fmt: skip
+    if junk:
+        rows.append(dict(uniquekey="X1", worktypedescription="Festival", applicationstartdate=iso(dt.date(2024, 7, 1)),
+                         latitude="41.9", longitude="-87.6"))  # fmt: skip
+        rows.append(dict(uniquekey="X2", worktypedescription="Parade", applicationprocesseddate=iso(dt.date(2024, 5, 1)),
+                         applicationstartdate=iso(dt.date(2024, 7, 1))))  # fmt: skip
+    return rows
+
+
+def stub_socrata(rows):
+    """A stand-in for ops.events_ingest.fetch: serves `rows` in $limit/$offset pages."""
+    import json
+    import urllib.parse
+
+    def get(url):
+        q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+        limit, offset = int(q["$limit"]), int(q["$offset"])
+        return json.dumps(rows[offset : offset + limit]).encode()
+
+    return get
