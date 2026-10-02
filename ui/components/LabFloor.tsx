@@ -155,10 +155,12 @@ export function LabFloor({ replay, scene, t, selectedSeat, onSeat, onComputer, o
                 key={s.id}
                 type="button"
                 onClick={() => onSlice(s.id)}
-                className={`flex flex-col items-start rounded-sm px-1.5 py-1 text-left shadow-[2px_2px_0_rgba(0,0,0,0.25)] ${parked ? "bg-[#FFD0D0]" : "bg-[#FFF3B8]"}`}
+                className={`flex w-full min-w-0 flex-col items-start rounded-sm px-1.5 py-1 text-left shadow-[2px_2px_0_rgba(0,0,0,0.25)] ${parked ? "bg-[#FFD0D0]" : "bg-[#FFF3B8]"}`}
               >
                 <span className="font-mono text-[10px] leading-tight text-[#10162B]">{s.id.split("-").slice(0, 2).join("-")}</span>
-                <span className="text-[10px] font-semibold leading-tight text-[#10162B]">{s.key}</span>
+                <span title={s.key} className="block w-full truncate text-[10px] font-semibold leading-tight text-[#10162B]">
+                  {s.key}
+                </span>
               </button>
             );
           })}
@@ -272,7 +274,7 @@ export function LabFloor({ replay, scene, t, selectedSeat, onSeat, onComputer, o
             key={`${bb.seat}-${bb.strong}`}
             type="button"
             onClick={() => onBubble(bb.seat)}
-            className={`absolute border-2 px-2 py-1 text-left text-[11px] leading-snug shadow-[3px_3px_0_#050814] transition-opacity ${TONE[bb.tone]} ${bb.strong ? "opacity-100" : "opacity-55"}`}
+            className={`absolute border-2 px-2 py-1 text-left text-[11px] leading-snug shadow-[3px_3px_0_#050814] transition ${TONE[bb.tone]} ${bb.strong ? "" : "brightness-[0.7] saturate-50"}`}
             style={{ left: bb.x, top: bb.y, width: bb.w, minHeight: bb.h, zIndex: bb.strong ? 50 : 45 }}
           >
             {bb.title ? (
