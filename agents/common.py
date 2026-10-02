@@ -82,10 +82,18 @@ def require_judge(rig, seat, sid, pre, to_stage, checks, judge):
     return now
 
 
+def replication_status(decision, replication):
+    """None before any replication; True when the LATEST attempt re-ran the same treatment and reached the same
+    decision (a negative result replicates as a negative result); False otherwise."""
+    if not replication:
+        return None
+    return bool(replication.get("same_treatment")) and replication.get("decision") == decision
+
+
 def slice_grade(rig, sid):
     """The evidence grade from the slice's proof files: the decision and the LATEST replication attempt."""
-    dec, repl = rig.read_proof(sid, "decision.json"), rig.read_proof(sid, "replication.json") or {}
-    replicated = repl.get("decision") == "supported" and bool(repl.get("same_treatment"))
+    dec, repl = rig.read_proof(sid, "decision.json"), rig.read_proof(sid, "replication.json")
+    replicated = replication_status(dec["decision"], repl)
     return sk.evidence_grade(dec["decision"], replicated, deviations=len(rig.deviations(sid)), controls_ok=True)
 
 

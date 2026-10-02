@@ -9,7 +9,8 @@ import json
 import os
 import sqlite3
 
-from agents.common import describe_config, evaluation_key, judge_digest
+from agents.common import describe_config, evaluation_key, judge_digest, replication_status
+from science import kernel as sk
 
 
 def _read(path):
@@ -18,6 +19,14 @@ def _read(path):
             return json.load(f)
     except (OSError, ValueError):
         return None
+
+
+def _grade(e, proof):
+    """The ledger's grade, with a B re-read from the replication proof under the current rule."""
+    if not e["grade"].startswith("B:"):
+        return e["grade"]
+    rep = replication_status(e["decision"], _read(os.path.join(proof, "replication.json")))
+    return sk.evidence_grade(e["decision"], rep, deviations=0, controls_ok=True)
 
 
 def import_run(kg, root, judge):
@@ -52,7 +61,7 @@ def import_run(kg, root, judge):
                 data_key=res.get("seed"),
                 design=body["design"].get("name", ""),
                 decision=dict(decision=e["decision"], point=e["point"], lo=e["lo"], hi=e["hi"]),
-                grade=e["grade"],
+                grade=_grade(e, proof),
                 stage="written",
                 prereg=(_read(os.path.join(proof, "prereg_locked.json")) or {}).get("digest", ""),
             )
@@ -97,3 +106,28 @@ def import_run(kg, root, judge):
         n["lessons"] += 1
     db.close()
     return n
+
+
+def regrade(kg, runs_dir):
+    """Rewrite every grade-B test's grade from its slice's proof files, with the current grading rule (B grades only:
+    a deviated or failed-controls test is C or D, which replication does not change). Returns {test id: new grade}
+    for the grades that changed. Touches no decision, effect or digest."""
+    changed = {}
+    rows = kg.db.execute(
+        "SELECT n.id, n.label, n.props, r.label FROM nodes n JOIN edges e ON e.src = n.id AND e.type = 'IN' "
+        "JOIN nodes r ON r.id = e.dst WHERE n.type = 'test' AND json_extract(n.props, '$.rig') = ?",
+        (kg.rig,),
+    ).fetchall()
+    for tid, sid, props, run in rows:
+        p = json.loads(props)
+        if not (p.get("grade") or "").startswith("B:") or not p.get("decision"):
+            continue
+        proof = os.path.join(runs_dir, run.removesuffix(" (imported)"), "slices", sid, "proof")
+        decision = p["decision"]["decision"]
+        grade = sk.evidence_grade(decision, replication_status(decision, _read(os.path.join(proof, "replication.json"))),
+                                  deviations=0, controls_ok=True)  # fmt: skip
+        if grade != p["grade"]:
+            kg.node(tid, "test", sid, grade=grade)
+            changed[tid] = grade
+    kg.commit()
+    return changed

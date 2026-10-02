@@ -35,7 +35,7 @@ def grades(ctx, sid):
 
 def test_grade_b_gets_one_extra_replication_and_is_promoted_when_it_succeeds(tmp_path):
     rig, ctx, _ = run(failing_replicator(1), root=str(tmp_path / "run"), n_campaigns=2)
-    assert grades(ctx, SLICE) == [(1, "B: supported, awaiting replication"), (2, "A: replicated")]
+    assert grades(ctx, SLICE) == [(1, "B: supported, not replicated"), (2, "A: replicated")]
     attempts = rig.read_proof(SLICE, "replications.json")
     assert [a["attempt"] for a in attempts] == [1, 2]
     seeds = [a["seed"] for a in attempts]
@@ -49,7 +49,7 @@ def test_grade_b_gets_one_extra_replication_and_is_promoted_when_it_succeeds(tmp
 
 def test_failed_second_replication_does_not_promote_and_the_cap_is_a_guard(tmp_path):
     rig, ctx, _ = run(failing_replicator(2), root=str(tmp_path / "run"), n_campaigns=2)
-    assert grades(ctx, SLICE) == [(c, "B: supported, awaiting replication") for c in (1, 2)]
+    assert grades(ctx, SLICE) == [(c, "B: supported, not replicated") for c in (1, 2)]
     assert "last_year_window" not in [h["promoted"] for h in ctx["champion_history"]]
     assert len(rig.read_proof(SLICE, "replications.json")) == REPLICATION_CAP
 
