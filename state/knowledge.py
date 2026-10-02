@@ -117,11 +117,18 @@ class Knowledge:
         self.commit()
 
     def request(self, run: str, campaign: int, text: str):
-        """The PI asked for data the lab does not have (the supervisor pings the owner)."""
+        """The PI asked the owner for something the lab cannot get itself (the supervisor pings the owner)."""
         rid = "request:" + hashlib.sha256(text.encode()).hexdigest()[:16]
         self.node(rid, "request", text, rig=self.rig)
         self.edge(rid, run, "FROM", run, campaign)
         self.commit()
+
+    def reply(self, text: str):
+        """The owner's answer to the lab (`make reply MSG=...`); the PI reads it in its next brief."""
+        rid = f"reply:{int(time.time() * 1000)}"
+        self.node(rid, "reply", text, rig=self.rig)
+        self.commit()
+        return rid
 
     # ------------------------------------------------------------------ reads
     def current_champion(self) -> tuple[dict, str] | None:
@@ -243,10 +250,16 @@ class Knowledge:
             )
         ]
         if asked:
-            lines.append(
-                "- Data requests already sent to the owner (do not ask again; keep testing what the data allows):"
-            )
+            lines.append("- Requests already sent to the owner (do not ask again; keep testing what the data allows):")
             lines += [f"  - {a[:200]}" for a in asked]
+        replies = self.db.execute(
+            "SELECT label, created FROM nodes WHERE type='reply' AND json_extract(props, '$.rig') = ? "
+            "ORDER BY created DESC LIMIT 5",
+            (self.rig,),
+        ).fetchall()
+        if replies:
+            lines.append("- Replies from the owner, newest first (they outrank lessons):")
+            lines += [f"  - {time.strftime('%Y-%m-%d', time.localtime(t))}: {r[:400]}" for r, t in replies]
         scr = self.screens(champion)
         if scr:
             lines.append(

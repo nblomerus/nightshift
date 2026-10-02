@@ -4,11 +4,12 @@ Each cycle:
   1. refresh the data (new trip months, the censoring table from collected snapshots; failures are logged, not fatal);
   2. run one lab run (several campaigns) with the knowledge graph, so it continues from everything learned;
   3. check, with the kernel, whether the champion now beats the original baseline by the rigspec's goal;
-  4. ping the owner, once per event, when: the goal is reached (and stop), the PI needs data the lab does not have,
-     the lab stalls (runs in a row that test nothing), or a run crashes;
-  5. wait for the next slot.
+  4. ping the owner, once per event, when: the goal is reached (and stop), the PI asks the owner for something the lab
+     cannot get itself, the lab stalls (runs in a row that test nothing), or a run crashes (once a day per error);
+  5. wait for the next slot by the wall clock, so a Mac that slept starts the next run as soon as it wakes.
 
-Pings: a macOS notification and a line in knowledge/alerts.jsonl (also printed). The supervisor never decides
+Pings: a macOS notification and a line in knowledge/alerts.jsonl (also printed). The owner answers the PI with
+`make reply MSG="..."`; the reply is in the PI's brief from its next plan. The supervisor never decides
 anything: decisions come from the kernel inside each run; the goal check is the same paired effect the kernel uses.
 
     python -m ops.labd --rigspec rigs/bikeshare-lab.json --every 3600
@@ -113,7 +114,7 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
             alerts,
             "crashed",
             f"run {name} failed: {type(e).__name__}: {e}",
-            key=f"crash:{type(e).__name__}:{e}",
+            key=f"crash:{dt.date.today()}:{type(e).__name__}:{e}",  # an outage that lasts days pings once a day
             seen=seen,
         )
         log(traceback.format_exc())
@@ -123,13 +124,13 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
     state["idle"] = 0 if tested else state.get("idle", 0) + 1
     state["runs"] = state.get("runs", 0) + 1
     log(f"{name}: {tested} slice(s) tested or stopped; idle streak {state['idle']}")
-    # One "needs data" ping a day while requests are open with the owner, however the PI words them.
+    # One "needs you" ping a day while requests are open with the owner, however the PI words them.
     reqs = ctx.get("external_requests", [])
     if reqs and time.time() - state.get("last_data_ping", 0) >= DATA_PING_EVERY:
-        msg = "The PI asks for data the lab does not have: " + reqs[-1]["request"]
+        msg = "The PI asks: " + reqs[-1]["request"]
         if len(reqs) > 1:
             msg += f" (asked {len(reqs)} times this run)"
-        alert(alerts, "needs data", msg)
+        alert(alerts, "needs you", msg + ' | Answer with: make reply MSG="..."')
         state["last_data_ping"] = time.time()
     if state["idle"] >= max_idle:
         msg = f"{state['idle']} runs in a row tested nothing (last: {name}). The lab needs new direction or data."
@@ -151,17 +152,24 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
     return status
 
 
-DATA_PING_EVERY = 24 * 3600  # seconds between "needs data" pings while a request is open with the owner
+DATA_PING_EVERY = 24 * 3600  # seconds between "needs you" pings while a request is open with the owner
 DIGEST_HOUR = 21  # local time: one digest a day, after this hour
 
 
 def maybe_digest(state, alerts, repo_root, rig, now=None):
-    """Once a day (after DIGEST_HOUR), write knowledge/digest-<day>.md and ping it."""
+    """Once a day (after DIGEST_HOUR), write knowledge/digest-<day>.md and ping it. A day whose digest was missed (the
+    Mac slept through the evening) is sent the next morning."""
     from api.progress import build_progress, digest_text
 
     now = now or dt.datetime.now()
-    day = now.date().isoformat()
-    if now.hour < DIGEST_HOUR or state.get("digest_day") == day:
+    last = state.get("digest_day")
+    if now.hour >= DIGEST_HOUR:
+        day = now.date().isoformat()
+    elif last:
+        day = (now.date() - dt.timedelta(days=1)).isoformat()
+    else:
+        return None
+    if last is not None and last >= day:
         return None
     text = digest_text(build_progress(repo_root, rig), day)
     with open(os.path.join(repo_root, "knowledge", f"digest-{day}.md"), "w") as f:
@@ -182,6 +190,7 @@ def main(argv=None):
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--print-launchd", action="store_true")
     a = ap.parse_args(argv)
+    sys.stdout.reconfigure(line_buffering=True)  # launchd writes stdout to a file: keep knowledge/labd.log current
     if a.print_launchd:
         print(launchd_plist(a.every), end="")
         return 0
@@ -217,7 +226,14 @@ def main(argv=None):
             return 0
         if a.once:
             return 0
-        time.sleep(max(60.0, a.every - (time.time() - t0)))
+        wait_until(max(t0 + a.every, time.time() + 60.0))
+
+
+def wait_until(t, nap=60.0):
+    """Sleep until wall-clock time `t`. macOS pauses `time.sleep` while the machine sleeps, so one long sleep would
+    push the next run back by however long the lid was shut; short naps re-read the clock."""
+    while (left := t - time.time()) > 0:
+        time.sleep(min(nap, left))
 
 
 def launchd_plist(every):
