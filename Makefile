@@ -84,7 +84,7 @@ install:
 pre-commit:
 	pre-commit install
 
-.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols labd reply requests knowledge collect ingest censor lock-month score-month ui-install ui ui-check clean
+.PHONY: check ruff test tests test-last-fail rig demo floor replay calibrate protocols labd reply requests events knowledge collect ingest censor lock-month score-month ui-install ui ui-check clean
 
 # Non-mutating lint + format check — mirrors the CI `lint` job. Use `make ruff` to autofix.
 check:
@@ -125,6 +125,9 @@ reply:
 
 requests:
 	$(VENV_PYTHON) -m ops.nightshift requests --rigspec $(or $(RIGSPEC),rigs/bikeshare-lab.json) $(if $(ALL),--all)
+
+events:
+	$(VENV_PYTHON) -m ops.events_ingest --system $(or $(SYSTEM),chi)
 
 knowledge:
 	$(VENV_PYTHON) -m ops.nightshift knowledge $(if $(RIGSPEC),--rigspec $(RIGSPEC)) $(if $(JSON),--json) $(if $(IMPORT),--import $(IMPORT))

@@ -45,6 +45,11 @@ MENU = {
     "tweedie_loss": ("Fit a Tweedie (p=1.5) GLM instead of Poisson", {"tweedie": True}),
     "censor_correct": ("Fit on latent demand: leave censored station-days out of training", {"censor": True}),
 }
+# Street events (ROADMAP 8g, docs/specs/bikeshare-events.md): offered only when an events snapshot exists, so the
+# lab never tests an empty covariate. Not part of BASELINE, so the champion's config id is unchanged.
+EVENTS_ITEM = ("street_events", ("Add street events (festivals, parades, races) within 400 m that were permitted by "
+                                 "the origin", {"events": True}))  # fmt: skip
+EVENT_RADIUS_M = 400.0  # fixed in the spec before any result; no seat may change it
 NEEDS_CENSOR_MASK = ("censor",)  # config fields that model latent demand: scorable only on masked months
 # Positive control: the baseline against a copy that cannot tell stations apart. The effect is large in every
 # month (+41 % to +77 % on real Divvy pilot months), so the protocol must detect it; a seasonal feature's effect
@@ -60,6 +65,7 @@ TRAIN_MONTHS = 12
 
 CONFIG = dict(
     root=os.environ.get("NIGHTSHIFT_BIKESHARE_ROOT", os.path.join("data", "bikeshare", "chi")),
+    events_root=None,  # default: data/events/<system> beside data/bikeshare/<system>
     # decision standards for the censoring mask (spec §4); the rigspec may set them, no seat may
     censoring=dict(empty_minutes=60, min_coverage=0.9, month_coverage=0.9),
 )
@@ -67,6 +73,8 @@ OK, CENSORED, NO_DATA = 1, 2, 0  # station-day status from GBFS snapshots
 FILES: tuple = ()
 DESIGNS: dict = {}
 _PANELS: dict = {}
+_EVENTS: dict = {}
+_EVENTS_KNOWN_BEFORE = None  # leak canary only: drop every event processed on or after this date
 
 
 # ---------------------------------------------------------------------------- months and roles
@@ -97,9 +105,13 @@ def configure(config, standards=None):
         CONFIG["censoring"] = dict(standards["censoring"])
     manifest = os.path.join(CONFIG["root"], "manifest.json")
     censor = os.path.join(CONFIG["root"], "censor_day.csv.gz")
-    # the data manifest and the censoring table are locked into every prereg with the code
+    events = os.path.join(events_root(), "manifest.json")
+    # the data manifest, the censoring table and the events manifest are locked into every prereg with the code
     sandbox = os.path.join(os.path.dirname(__file__), "sandbox.py")
-    globals()["FILES"] = (__file__, sandbox, manifest) + ((censor,) if os.path.exists(censor) else ())
+    globals()["FILES"] = (__file__, sandbox, manifest) + tuple(p for p in (censor, events) if os.path.exists(p))
+    MENU.pop(EVENTS_ITEM[0], None)
+    if os.path.exists(events):
+        MENU[EVENTS_ITEM[0]] = EVENTS_ITEM[1]
     targets = target_months(load_panel())
     recent = targets[-24:]
     conf_all = [m for m in targets if role(m) == "confirmation"]
@@ -149,6 +161,59 @@ def load_panel(root=None, as_of=None):
     )
     _PANELS[key] = panel
     return panel
+
+
+def events_root():
+    root = os.path.abspath(CONFIG["root"])
+    return CONFIG.get("events_root") or os.path.join(
+        os.path.dirname(os.path.dirname(root)), "events", os.path.basename(root)
+    )
+
+
+def load_events(as_of):
+    """Street-event permits from the latest snapshot taken before `as_of` (a prospective lock reads only what existed
+    then), or the earliest snapshot for a backtest origin older than every snapshot (spec §2, risk 2). Empty without
+    data. Which permits were known at the origin is decided by their processed date, in event_counts."""
+    root = events_root()
+    path = os.path.join(root, "manifest.json")
+    cols = ["processed", "start", "end", "lat", "lon"]
+    if not os.path.exists(path):
+        return pd.DataFrame(columns=cols)
+    with open(path) as f:
+        snaps = json.load(f)["snapshots"]
+    day = as_of[:10]
+    before = sorted((s["date"], n) for n, s in snaps.items() if s["date"] < day)
+    name = before[-1][1] if before else min(snaps, key=lambda n: snaps[n]["date"])
+    key = (root, name, snaps[name]["sha256"])
+    if key not in _EVENTS:
+        df = pd.read_csv(os.path.join(root, name), usecols=cols)
+        for c in ("processed", "start", "end"):
+            df[c] = pd.to_datetime(df[c]).dt.date
+        _EVENTS[key] = df
+    df = _EVENTS[key]
+    if _EVENTS_KNOWN_BEFORE is not None:
+        df = df[df["processed"] < _EVENTS_KNOWN_BEFORE]
+    return df
+
+
+def event_counts(lat, lon, dates, events, known_before, radius=EVENT_RADIUS_M, peek=False):
+    """[stations, dates]: events within `radius` metres active on each date, among permits processed before
+    `known_before` (the origin's day: an application processed that day may postdate the data). `peek` (test-only)
+    ignores the processed date, which the leak canary must catch."""
+    ev = events if peek else events[events["processed"] < known_before]
+    ev = ev[(ev["end"] >= dates[0]) & (ev["start"] <= dates[-1])]
+    out = np.zeros((len(lat), len(dates)))
+    if not len(ev):
+        return out
+    m_per_deg = 111_320.0
+    dy = (np.asarray(lat)[:, None] - ev["lat"].to_numpy()[None, :]) * m_per_deg
+    dx = (np.asarray(lon)[:, None] - ev["lon"].to_numpy()[None, :]) * m_per_deg * np.cos(np.radians(np.mean(lat)))
+    near = (dx**2 + dy**2) <= radius**2  # [stations, events]
+    d = np.array([x.toordinal() for x in dates])
+    s = np.array([x.toordinal() for x in ev["start"]])
+    e = np.array([x.toordinal() for x in ev["end"]])
+    active = (d[None, :] >= s[:, None]) & (d[None, :] <= e[:, None])  # [events, dates]
+    return near.astype(float) @ active.astype(float)
 
 
 def _censor_status(root, stations, d_idx, n_days):
@@ -248,6 +313,13 @@ def _design_rows(panel, Y, e, month, view_month, g, rng):
     if g["trend"]:  # system pickups in the last 28 days vs the same 28 days a year earlier; 1 without a year
         last, prev = Y[:, e - 27 : e + 1].sum(), Y[:, e - 27 - 364 : e + 1 - 364].sum() if e >= 391 else 0.0
         cols.append(np.full(S * D, np.log(last / prev) if prev > 0 else 0.0))
+    if g.get("events") or g.get("events_peek"):
+        xy = panel["coords"][view_month].reindex([panel["stations"][i] for i in uni])
+        xy = xy.fillna(xy.mean())
+        as_of = panel["published"][view_month]
+        n = event_counts(xy["lat"].to_numpy(), xy["lon"].to_numpy(), dates, load_events(as_of),
+                         dt.date.fromisoformat(as_of[:10]), peek=bool(g.get("events_peek")))  # fmt: skip
+        cols += [(n > 0).astype(float).reshape(-1), np.log1p(n).reshape(-1)]
     if g["noise"]:
         cols.append(rng.normal(size=S * D))
     if g.get("peek"):  # test-only: reads the target month itself, which the leak canary must catch
@@ -446,12 +518,18 @@ def evaluate(genome, design, key, cache):
 
 
 def leak_canary(genome, design, key, cache, tol=1e-9):
-    """True if predictions change when everything after the origin's last visible day is scrambled."""
+    """True if predictions change when everything after the origin is scrambled: the pickups after its last visible
+    day, and every street-event permit processed on or after its day."""
+    global _EVENTS_KNOWN_BEFORE
     panel = load_panel()
     month = _origins(design, key)[0]
-    _, e, _ = origin(panel, month)
+    as_of, e, _ = origin(panel, month)
     scrambled = panel["Y"].copy()
     scrambled[:, e + 1 :] = np.random.default_rng(0).poisson(5.0, scrambled[:, e + 1 :].shape)
     _, _, a = predict_month(panel, panel["Y"], month, genome)
-    _, _, b = predict_month(panel, scrambled, month, genome)
+    _EVENTS_KNOWN_BEFORE = dt.date.fromisoformat(as_of[:10])
+    try:
+        _, _, b = predict_month(panel, scrambled, month, genome)
+    finally:
+        _EVENTS_KNOWN_BEFORE = None
     return bool(np.max(np.abs(a - b)) > tol)
