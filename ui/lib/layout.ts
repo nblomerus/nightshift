@@ -41,6 +41,9 @@ export const VAULT_SPOT = { x: 856, y: 404 };
 export const WHITEBOARD = { x: 330, y: 70, w: 110, h: 206 };
 export const MEETING_TABLE = { x: 468, y: 540, w: 210, h: 58 };
 export const COFFEE = { x: 34, y: 452 };
+// The PI's mailbox: requests to the owner. The PI waits beside it while one is open.
+export const MAILBOX = { x: 252, y: 150 };
+export const MAILBOX_SPOT = { x: 198, y: 136 };
 
 export const DESK_W = 96;
 export const WORKSTATION_W = 88;

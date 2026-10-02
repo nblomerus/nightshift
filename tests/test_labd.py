@@ -65,11 +65,13 @@ def test_a_stall_pings_once(spec_dir, tmp_path):
 
 def test_a_request_to_the_owner_pings_once_a_day_however_it_is_worded(spec_dir, tmp_path):
     state = {}
-    first = pi({"picks": [], "lesson": "l", "ask_owner": "A public events calendar for Chicago"})
+    ask = {"what": "A public events calendar for Chicago", "why": "events move pickups", "how": "city open data",
+           "done": "a CSV under data/events"}  # fmt: skip
+    first = pi({"picks": [], "lesson": "l", "ask_owner": ask})
     go(spec_dir, tmp_path, first, state)
     go(spec_dir, tmp_path, pi({"picks": [], "lesson": "l", "needs_external_data": "Events"}), state)  # older key
     needs = [a for a in alerts(tmp_path) if a["kind"] == "needs you"]
-    assert len(needs) == 1 and "events calendar" in needs[0]["message"] and "make reply" in needs[0]["message"]
+    assert len(needs) == 1 and "events calendar" in needs[0]["message"] and "mailbox" in needs[0]["message"]
 
 
 def test_the_pi_is_told_what_data_it_cannot_get(spec_dir, tmp_path):
@@ -128,7 +130,7 @@ def test_open_requests_are_in_the_pis_brief_so_it_does_not_ask_again(tmp_path):
     run_id = kg.begin_run("r", "j")
     kg.request(run_id, 1, "Daily weather forecasts for Chicago")
     brief = kg.brief(bj.BASELINE, "base", [])
-    assert "already sent to the owner" in brief and "Daily weather forecasts" in brief
+    assert "open with the owner" in brief and "Daily weather forecasts" in brief
 
 
 def test_the_owners_reply_reaches_the_pis_brief(tmp_path):
@@ -148,3 +150,37 @@ def test_an_empty_reply_is_refused(tmp_path):
 
     with pytest.raises(SystemExit):
         nightshift.main(["reply", "  ", "--knowledge", str(tmp_path / "kg.db")])
+
+
+def test_a_request_is_a_brief_that_stays_open_until_the_owner_answers_it(tmp_path):
+    from ops import nightshift
+    from state.knowledge import Knowledge
+
+    kg = Knowledge(str(tmp_path / "kg.db"), "lab")
+    run_id = kg.begin_run("r", "j")
+    ask = dict(what="An events calendar", why="events move pickups", how="city open data", done="a CSV in data/")
+    rid = kg.request(run_id, 1, ask)
+    assert kg.request(run_id, 2, dict(ask, why="asked again")) == rid  # the same ask counts, it is not a new one
+    (r,) = kg.requests("open")
+    assert (r["asks"], r["how"], r["done"]) == (2, "city open data", "a CSV in data/")
+    assert r["id"] in nightshift.request_text(r) and "Done: a CSV in data/" in nightshift.request_text(r)
+    kg.reply("None exists for Chicago; drop it", rid)
+    assert kg.requests("open") == [] and kg.requests("answered")[0]["reply"].startswith("None exists")
+    brief = kg.brief(bj.BASELINE, "base", [])
+    assert "open with the owner" not in brief and '(to "An events calendar")' in brief
+    with pytest.raises(KeyError):
+        kg.reply("hello", "request:nope")
+
+
+def test_the_cli_lists_requests_and_refuses_an_unknown_one(tmp_path, capsys):
+    from ops import nightshift
+    from state.knowledge import Knowledge
+
+    kg_path, spec = str(tmp_path / "kg.db"), "rigs/bikeshare-lab.json"
+    kg = Knowledge(kg_path, load_rigspec(spec)["rig"])
+    kg.request(kg.begin_run("r", "j"), 1, {"what": "An events calendar", "how": "city open data"})
+    nightshift.main(["requests", "--rigspec", spec, "--knowledge", kg_path])
+    out = capsys.readouterr().out
+    assert "[open]" in out and "What: An events calendar" in out and "How: city open data" in out
+    with pytest.raises(SystemExit):
+        nightshift.main(["reply", "x", "--request", "request:nope", "--rigspec", spec, "--knowledge", kg_path])

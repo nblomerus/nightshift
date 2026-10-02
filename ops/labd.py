@@ -130,7 +130,7 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
         msg = "The PI asks: " + reqs[-1]["request"]
         if len(reqs) > 1:
             msg += f" (asked {len(reqs)} times this run)"
-        alert(alerts, "needs you", msg + ' | Answer with: make reply MSG="..."')
+        alert(alerts, "needs you", msg + " | Open the mailbox on the lab floor (make ui) or run: make requests")
         state["last_data_ping"] = time.time()
     if state["idle"] >= max_idle:
         msg = f"{state['idle']} runs in a row tested nothing (last: {name}). The lab needs new direction or data."

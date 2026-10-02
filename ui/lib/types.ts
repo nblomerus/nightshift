@@ -100,3 +100,17 @@ export interface RunInfo {
   modified: number;
   recorded: boolean;
 }
+
+// What the PI has asked the owner (GET /api/requests; POST /api/requests/reply answers one).
+export interface OwnerRequest {
+  id: string;
+  what: string;
+  why: string;
+  how: string;
+  done: string;
+  status: "open" | "answered";
+  asks: number;
+  asked: number; // epoch seconds of the latest ask
+  reply: string | null;
+  answered: number | null;
+}

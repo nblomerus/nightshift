@@ -299,3 +299,17 @@ export function Armchair() {
     </svg>
   );
 }
+
+// The PI's mailbox, 36 x 52: the flag is up and the slot glows while requests to the owner are open.
+export function Mailbox({ lit }: { lit: boolean }) {
+  return (
+    <svg width={36} height={52} viewBox="0 0 36 52" shapeRendering="crispEdges" aria-hidden="true">
+      <rect x={15} y={26} width={6} height={26} fill="#4A3425" />
+      <rect x={2} y={8} width={28} height={20} fill={lit ? "#3E5BA8" : "#2E3B66"} stroke="#53648E" strokeWidth={2} />
+      <rect x={2} y={4} width={28} height={6} fill={lit ? "#5A78C8" : "#3A4570"} />
+      <rect x={8} y={14} width={16} height={4} fill={lit ? "#FFD05A" : INK} className={lit ? "blink" : undefined} />
+      <rect x={30} y={lit ? 0 : 12} width={3} height={lit ? 14 : 4} fill="#AAB4CA" />
+      {lit ? <rect x={33} y={0} width={3} height={6} fill="#FF8585" /> : null}
+    </svg>
+  );
+}

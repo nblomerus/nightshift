@@ -11,6 +11,7 @@ import { Transport } from "@/components/Transport";
 import { sceneAt } from "@/lib/scene";
 import type { Replay } from "@/lib/types";
 import { useReplay } from "@/lib/useReplay";
+import { useRequests } from "@/lib/useRequests";
 import { type Mode, useRun, useRuns } from "@/lib/useRun";
 
 const EMPTY: Replay = { rig: "", mission: "", seats: {}, stages: [], standards: {}, beats: [], total: 0, calls: {}, msgs: [], slices: [], ledger: {} };
@@ -23,7 +24,7 @@ function linkParams() {
   const t = q.get("t");
   return {
     run: q.get("run"),
-    tab: (tab && ["screen", "seat", "slice", "talk"].includes(tab) ? tab : "screen") as Tab,
+    tab: (tab && ["screen", "seat", "slice", "talk", "mail"].includes(tab) ? tab : "screen") as Tab,
     seat: q.get("seat") ?? "pi",
     t: t !== null && !Number.isNaN(Number(t)) ? Number(t) : null,
   };
@@ -37,7 +38,8 @@ export default function LabApp() {
   const { replay, error, connected } = useRun(run ?? runs[0]?.name ?? null, mode);
   const data = replay ?? EMPTY;
   const player = useReplay(data.beats, data.total, mode === "live", link.t);
-  const scene = useMemo(() => sceneAt(data, player.t), [data, player.t]);
+  const mail = useRequests(data.rig || runs[0]?.rig || "");
+  const scene = useMemo(() => sceneAt(data, player.t, mail.open), [data, player.t, mail.open]);
 
   const [tab, setTab] = useState<Tab>(link.tab);
   const [seat, setSeat] = useState(link.seat);
@@ -107,6 +109,7 @@ export default function LabApp() {
                   setSlice(id);
                   setTab("slice");
                 }}
+                onMailbox={() => setTab("mail")}
                 onBubble={(s) => {
                   if (b?.kind === "talk" && (b.actor === s || b.target === s)) setTab("talk");
                   else {
@@ -137,7 +140,7 @@ export default function LabApp() {
           </div>
           <Transport player={player} total={data.total} live={mode === "live"} caption={caption} />
         </main>
-        <Inspector replay={data} scene={scene} t={player.t} tab={tab} onTab={setTab} seat={seat} slice={slice} screen={screen} onScreen={setScreen} />
+        <Inspector replay={data} scene={scene} t={player.t} tab={tab} onTab={setTab} seat={seat} slice={slice} screen={screen} onScreen={setScreen} requests={mail.requests} onReply={mail.reply} />
       </div>
       <QuickHelp open={help} onClose={() => setHelp(false)} />
     </div>

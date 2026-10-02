@@ -116,19 +116,52 @@ class Knowledge:
         self.edge(lid, run, "FROM", run, campaign)
         self.commit()
 
-    def request(self, run: str, campaign: int, text: str):
-        """The PI asked the owner for something the lab cannot get itself (the supervisor pings the owner)."""
-        rid = "request:" + hashlib.sha256(text.encode()).hexdigest()[:16]
-        self.node(rid, "request", text, rig=self.rig)
+    def request(self, run: str, campaign: int, ask: dict | str):
+        """The PI asked the owner for something the lab cannot get itself (the supervisor pings the owner). `ask` is
+        the PI's brief, {what, why, how, done}; a bare string is just `what`. Asking the same thing again counts."""
+        fields = ("what", "why", "how", "done")
+        ask = {"what": ask} if isinstance(ask, str) else ask
+        ask = {k: str(ask.get(k) or "").strip()[:800] for k in fields}
+        rid = "request:" + hashlib.sha256(ask["what"].encode()).hexdigest()[:16]
+        row = self.db.execute("SELECT props FROM nodes WHERE id=?", (rid,)).fetchone()
+        old = json.loads(row[0]) if row else {}
+        new = {"status": "open"} if not row else {}
+        self.node(rid, "request", ask["what"], rig=self.rig, asks=old.get("asks", 1 if row else 0) + 1,
+                  last_asked=time.time(), **new, **{k: v for k, v in ask.items() if v})  # fmt: skip
         self.edge(rid, run, "FROM", run, campaign)
         self.commit()
+        return rid
 
-    def reply(self, text: str):
-        """The owner's answer to the lab (`make reply MSG=...`); the PI reads it in its next brief."""
+    def reply(self, text: str, request: str | None = None):
+        """The owner's answer to the lab (`make reply`, or the lab floor's mailbox); the PI reads it in its next
+        brief. Naming a request answers it, which closes it."""
+        row = None
+        if request is not None:
+            row = self.db.execute("SELECT label FROM nodes WHERE id=? AND type='request'", (request,)).fetchone()
+            if row is None:  # checked before writing anything, so a refused reply leaves no open transaction
+                raise KeyError(f"no such request: {request}")
         rid = f"reply:{int(time.time() * 1000)}"
-        self.node(rid, "reply", text, rig=self.rig)
+        self.node(rid, "reply", text, rig=self.rig, request=request)
+        if row is not None:
+            self.node(request, "request", row[0], status="answered", reply=text, answered=time.time())
         self.commit()
         return rid
+
+    def requests(self, status: str | None = None) -> list[dict]:
+        """Everything the PI has asked the owner, newest first, with its status and the owner's reply."""
+        out = []
+        for nid, label, props, created in self.db.execute(
+            "SELECT id, label, props, created FROM nodes WHERE type='request' AND json_extract(props, '$.rig') = ? "
+            "ORDER BY created DESC",
+            (self.rig,),
+        ):
+            p = json.loads(props)
+            r = dict(id=nid, what=p.get("what") or label, why=p.get("why", ""), how=p.get("how", ""),
+                     done=p.get("done", ""), status=p.get("status", "open"), asks=p.get("asks", 1),
+                     asked=p.get("last_asked", created), reply=p.get("reply"), answered=p.get("answered"))  # fmt: skip
+            if status is None or r["status"] == status:
+                out.append(r)
+        return out
 
     # ------------------------------------------------------------------ reads
     def current_champion(self) -> tuple[dict, str] | None:
@@ -241,25 +274,23 @@ class Knowledge:
                 "- Not available this campaign, already decided against this champion on the same data under the same "
                 f"judge (re-running reproduces the answer): {', '.join(unavailable)}."
             )
-        asked = [
-            r[0]
-            for r in self.db.execute(
-                "SELECT label FROM nodes WHERE type='request' AND json_extract(props, '$.rig') = ? "
-                "ORDER BY created DESC LIMIT 3",
-                (self.rig,),
-            )
-        ]
-        if asked:
-            lines.append("- Requests already sent to the owner (do not ask again; keep testing what the data allows):")
-            lines += [f"  - {a[:200]}" for a in asked]
+        reqs = self.requests()
+        open_ = [r for r in reqs if r["status"] == "open"]
+        if open_:
+            lines.append("- Requests open with the owner (do not ask again; keep testing what the data allows):")
+            lines += [f"  - {r['what'][:200]}" for r in open_[:5]]
         replies = self.db.execute(
-            "SELECT label, created FROM nodes WHERE type='reply' AND json_extract(props, '$.rig') = ? "
+            "SELECT label, props, created FROM nodes WHERE type='reply' AND json_extract(props, '$.rig') = ? "
             "ORDER BY created DESC LIMIT 5",
             (self.rig,),
         ).fetchall()
         if replies:
+            asked = {r["id"]: r["what"] for r in reqs}
             lines.append("- Replies from the owner, newest first (they outrank lessons):")
-            lines += [f"  - {time.strftime('%Y-%m-%d', time.localtime(t))}: {r[:400]}" for r, t in replies]
+            for text, props, t in replies:
+                about = asked.get(json.loads(props).get("request"))
+                re_ = f' (to "{about[:120]}")' if about else ""
+                lines.append(f"  - {time.strftime('%Y-%m-%d', time.localtime(t))}{re_}: {text[:400]}")
         scr = self.screens(champion)
         if scr:
             lines.append(

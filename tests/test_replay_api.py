@@ -1,6 +1,7 @@
 """The lab floor's replay: one ordered list of beats built from a run's own records, served over HTTP."""
 
 import json
+import sqlite3
 import threading
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -76,3 +77,35 @@ def test_http_serves_runs_and_replays_and_refuses_paths(run_root):
 
 def test_list_runs_marks_recorded_runs(run_root):
     assert list_runs(str(run_root.parent))[0]["recorded"] is True
+
+
+def test_the_mailbox_lists_requests_and_answers_one(tmp_path):
+    from state.knowledge import Knowledge
+
+    runs = tmp_path / "runs" / "r1"
+    runs.mkdir(parents=True)
+    sqlite3.connect(runs / "rig.db").close()
+    (runs / "rigspec.json").write_text(json.dumps({"rig": "lab"}))
+    kg = Knowledge(str(tmp_path / "knowledge" / "lab.db"), "lab")
+    rid = kg.request(kg.begin_run("r", "j"), 1, {"what": "An events calendar"})
+    Handler.root = str(runs)
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def post(body):
+        req = urllib.request.Request(f"{base}/api/requests/reply", json.dumps(body).encode(), method="POST",
+                                     headers={"Content-Type": "application/json"})  # fmt: skip
+        return json.load(urllib.request.urlopen(req))
+
+    try:
+        (r,) = json.load(urllib.request.urlopen(f"{base}/api/requests"))
+        assert (r["id"], r["status"]) == (rid, "open")
+        for bad, code in (({"id": rid, "text": "  "}, 400), ({"id": "request:nope", "text": "hi"}, 404)):
+            with pytest.raises(urllib.error.HTTPError) as e:
+                post(bad)
+            assert e.value.code == code
+        (r,) = post({"id": rid, "text": "None exists; drop it"})
+        assert (r["status"], r["reply"]) == ("answered", "None exists; drop it")
+    finally:
+        srv.shutdown()

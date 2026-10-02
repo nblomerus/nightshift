@@ -161,16 +161,47 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             return
 
+    def _rig(self, q):
+        """(repo root, rig) for the lab-wide views: ?rig= or the newest run's rig (a bare name, never a path)."""
+        runs = list_runs(os.path.dirname(os.path.abspath(self.root)))
+        rig = q.get("rig", [runs[0]["rig"] if runs else ""])[0]
+        return os.path.dirname(os.path.dirname(os.path.abspath(self.root))), os.path.basename(rig)
+
+    def _knowledge(self, q):
+        from state.knowledge import Knowledge
+
+        repo, rig = self._rig(q)
+        return Knowledge(os.path.join(repo, "knowledge", f"{rig}.db"), rig)
+
+    def do_POST(self):
+        """The mailbox: the owner answers one of the PI's requests (it closes; the PI reads it in its next plan)."""
+        u = urlparse(self.path)
+        if u.path != "/api/requests/reply":
+            return self._json({"error": "not found"}, 404)
+        try:
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        except ValueError:
+            return self._json({"error": "body must be JSON"}, 400)
+        text, rid = str(body.get("text") or "").strip(), body.get("id")
+        if not text or not isinstance(rid, str):
+            return self._json({"error": "needs an id and a non-empty text"}, 400)
+        kg = self._knowledge(parse_qs(u.query))
+        try:
+            kg.reply(text[:4000], rid)
+        except KeyError:
+            return self._json({"error": "no such request"}, 404)
+        return self._json(kg.requests())
+
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path == "/api/requests":
+            return self._json(self._knowledge(q).requests())
         if u.path == "/api/progress":
             from api.progress import build_progress
 
-            runs = list_runs(os.path.dirname(os.path.abspath(self.root)))
-            rig = q.get("rig", [runs[0]["rig"] if runs else ""])[0]
-            repo = os.path.dirname(os.path.dirname(os.path.abspath(self.root)))
-            return self._json(build_progress(repo, os.path.basename(rig)))
+            repo, rig = self._rig(q)
+            return self._json(build_progress(repo, rig))
         if u.path == "/api/runs":
             return self._json(list_runs(os.path.dirname(os.path.abspath(self.root))))
         if u.path in ("/api/replay", "/api/events"):

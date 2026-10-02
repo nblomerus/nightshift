@@ -90,9 +90,12 @@ def pi_plan(rig, seat, task, ctx):
             else ""
         )
         + "Work autonomously. Ask the owner only for something the lab cannot get or decide itself and that would "
-        "change what it can test (data, access, a decision only the owner can make): say what, why, and how the owner "
-        "could provide it in ask_owner; otherwise null. The owner is notified and answers later; keep testing what "
-        "the available data allows meanwhile. "
+        "change what it can test (data, access, a decision only the owner can make), and never for something already "
+        "open with the owner. Write it as a brief someone could act on without asking you anything: "
+        '{"what": "the one thing you need, in one sentence", "why": "which hypothesis it unlocks and the effect you '
+        'expect", "how": "where it can be obtained (source, URL, format) and how it should reach the lab", "done": '
+        '"how the owner will know it is delivered"}. Otherwise ask_owner is null. The owner is notified, answers '
+        "later, and the answer appears in your brief; keep testing what the available data allows meanwhile. "
         'Reply JSON: {"picks": [{"key": "...", "rationale": "..."}], "lesson": "...", "ask_owner": null}',
     )
     picks, dropped = [], []
@@ -125,12 +128,12 @@ def pi_plan(rig, seat, task, ctx):
         rig.send(seat, seat, "Picks not taken: " + "; ".join(dropped))
     if out.get("lesson"):
         ctx["lessons"].append(f"(after campaign {ctx['campaign'] - 1}) {out['lesson']}")
-    need = out.get("ask_owner", out.get("needs_external_data"))
-    if isinstance(need, str) and need.strip() and need.strip().lower() not in ("null", "none", "no"):
-        ctx.setdefault("external_requests", []).append(dict(campaign=ctx["campaign"], request=need.strip()[:800]))
-        rig.send(seat, seat, f"Asked the owner: {need.strip()[:800]}")  # the supervisor pings the owner
+    ask = owner_ask(out.get("ask_owner", out.get("needs_external_data")))
+    if ask:
+        ctx.setdefault("external_requests", []).append(dict(campaign=ctx["campaign"], request=ask["what"], **ask))
+        rig.send(seat, seat, f"Asked the owner: {ask['what']}")  # the supervisor pings the owner
         if kg is not None:
-            kg.request(ctx["run_id"], ctx["campaign"], need.strip()[:800])
+            kg.request(ctx["run_id"], ctx["campaign"], ask)
     ctx["alpha_per_test"] = rig.spec["decision_standards"]["alpha_campaign"] / max(len(picks), 1)
     for i, p in enumerate(picks):
         key = p["key"]
@@ -147,6 +150,16 @@ def pi_plan(rig, seat, task, ctx):
             seat, rig.seat_for("methodologist"), "draft_prereg", sid, dict(key=key, rationale=p.get("rationale", ""))
         )
     return dict(picks=[p["key"] for p in picks], lesson=out.get("lesson"))
+
+
+def owner_ask(raw):
+    """The PI's request to the owner as {what, why, how, done}, or None. A bare string (older prompts) is `what`."""
+    if isinstance(raw, str):
+        raw = {"what": raw}
+    if not isinstance(raw, dict):
+        return None
+    ask = {k: str(raw.get(k) or "").strip()[:800] for k in ("what", "why", "how", "done")}
+    return ask if ask["what"] and ask["what"].lower() not in ("null", "none", "no") else None
 
 
 def kg_champion(ctx):
