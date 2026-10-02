@@ -4,11 +4,12 @@ import { useState } from "react";
 
 import { LOOKS } from "@/lib/layout";
 import { beatIndexAt, decisionVisible, mmss, pct, type Scene, stageAt } from "@/lib/scene";
-import type { Beat, Replay } from "@/lib/types";
+import type { Beat, OwnerRequest, Replay } from "@/lib/types";
+import { requestBrief } from "@/lib/useRequests";
 
 import { Character } from "./sprites";
 
-export type Tab = "screen" | "seat" | "slice" | "talk";
+export type Tab = "screen" | "seat" | "slice" | "talk" | "mail";
 // What the Screen tab shows: follow the action, a desk's computer, a GPU workstation, or one beat.
 export type ScreenTarget = "follow" | `desk:${string}` | `gpu${number}` | `beat:${number}`;
 
@@ -422,6 +423,105 @@ function TalkTab({ replay, t, current }: { replay: Replay; t: number; current: n
   );
 }
 
+// ---------------------------------------------------------------------------- Mailbox
+
+function when(ts: number | null): string {
+  return ts ? new Date(ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+}
+
+function RequestCard({ r, onReply }: { r: OwnerRequest; onReply: (id: string, text: string) => Promise<void> }) {
+  const [copied, setCopied] = useState(false);
+  const [text, setText] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const open = r.status === "open";
+  const copy = () =>
+    navigator.clipboard.writeText(requestBrief(r)).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  const send = () => {
+    setBusy(true);
+    setErr(null);
+    onReply(r.id, text)
+      .then(() => setText(""))
+      .catch((e: Error) => setErr(e.message))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className={`flex flex-col gap-2 rounded-md border-2 p-3 ${open ? "border-[#FFD05A] bg-[#FFF3B8]" : "border-[#10162B] bg-[#F4F6FA] opacity-80"}`}>
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[14px] font-semibold leading-snug text-[#10162B]">{r.what}</span>
+        <button type="button" onClick={copy} className="h-8 shrink-0 rounded-md border-2 border-[#10162B] bg-white px-2 text-[12px] font-semibold text-[#10162B] hover:bg-[#E8EDF7]">
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      {(
+        [
+          ["Why", r.why],
+          ["How", r.how],
+          ["Done when", r.done],
+        ] as const
+      )
+        .filter(([, v]) => v)
+        .map(([k, v]) => (
+          <p key={k} className="text-[13px] leading-relaxed text-[#263255]">
+            <span className="font-semibold text-[#10162B]">{k}: </span>
+            {v}
+          </p>
+        ))}
+      <span className="text-[11px] text-[#53648E]">
+        {open ? "Open" : "Answered"} · asked {r.asks}× · last {when(r.asked)}
+      </span>
+      {open ? (
+        <div className="flex flex-col gap-1.5">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={2}
+            placeholder="Answer the PI (closes the request; it reads this in its next plan)"
+            className="w-full resize-y rounded-md border-2 border-[#10162B] bg-white p-2 text-[13px] text-[#10162B]"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy || !text.trim()}
+              onClick={send}
+              className="h-8 rounded-md bg-[#10162B] px-3 text-[12px] font-semibold text-[#FFD05A] disabled:opacity-40"
+            >
+              Answer
+            </button>
+            {err ? <span className="text-[12px] text-[#B42318]">{err}</span> : null}
+          </div>
+        </div>
+      ) : (
+        <p className="text-[13px] leading-relaxed text-[#10162B]">
+          <span className="font-semibold">Your answer ({when(r.answered)}): </span>
+          {r.reply}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MailTab({ requests, onReply }: { requests: OwnerRequest[]; onReply: (id: string, text: string) => Promise<void> }) {
+  const open = requests.filter((r) => r.status === "open");
+  const done = requests.filter((r) => r.status !== "open");
+  if (!requests.length) return <p className="text-[13px] text-[#AAB4CA]">The PI has not asked you for anything. It asks only for what the lab cannot get or decide itself.</p>;
+  return (
+    <div className="flex flex-col gap-4">
+      <Label>{open.length ? `Open (${open.length})` : "Nothing open"}</Label>
+      {open.map((r) => (
+        <RequestCard key={r.id} r={r} onReply={onReply} />
+      ))}
+      {done.length ? <Label color="#AAB4CA">Answered ({done.length})</Label> : null}
+      {done.map((r) => (
+        <RequestCard key={r.id} r={r} onReply={onReply} />
+      ))}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------- Inspector
 
 export function Inspector(props: {
@@ -434,21 +534,24 @@ export function Inspector(props: {
   slice: string | null;
   screen: ScreenTarget;
   onScreen: (s: ScreenTarget) => void;
+  requests: OwnerRequest[];
+  onReply: (id: string, text: string) => Promise<void>;
 }) {
-  const { replay, scene, t, tab, onTab, seat, slice, screen, onScreen } = props;
+  const { replay, scene, t, tab, onTab, seat, slice, screen, onScreen, requests, onReply } = props;
   const openBeat = (k: number) => {
     onScreen(`beat:${k}`);
     onTab("screen");
   };
   return (
     <aside className="flex min-h-0 w-[460px] shrink-0 flex-col border-l-2 border-[#1B2444] bg-[#0B1122]">
-      <div role="tablist" className="flex gap-6 border-b-2 border-[#1B2444] px-5">
+      <div role="tablist" className="flex gap-5 border-b-2 border-[#1B2444] px-5">
         {(
           [
             ["screen", "Screen"],
             ["seat", "Seat"],
             ["slice", "Slice"],
-            ["talk", "Conversations"],
+            ["talk", "Talk"],
+            ["mail", "Mailbox"],
           ] as const
         ).map(([k, l]) => (
           <button
@@ -460,6 +563,7 @@ export function Inspector(props: {
             className={`h-12 border-b-[3px] text-[15px] font-semibold ${tab === k ? "border-[#FFD05A] text-[#E8EDF7]" : "border-transparent text-[#AAB4CA] hover:text-[#E8EDF7]"}`}
           >
             {l}
+            {k === "mail" && scene.mail ? <span className="ml-1.5 rounded-full bg-[#FF8585] px-1.5 text-[11px] text-[#10162B]">{scene.mail}</span> : null}
           </button>
         ))}
       </div>
@@ -467,6 +571,7 @@ export function Inspector(props: {
         {tab === "screen" ? <ScreenTab replay={replay} scene={scene} t={t} target={screen} onFollow={() => onScreen("follow")} /> : null}
         {tab === "seat" ? <SeatTab replay={replay} scene={scene} t={t} seat={seat} onBeat={openBeat} /> : null}
         {tab === "slice" ? <SliceTab replay={replay} t={t} id={slice} onRun={openBeat} /> : null}
+        {tab === "mail" ? <MailTab requests={requests} onReply={onReply} /> : null}
         {tab === "talk" ? <TalkTab replay={replay} t={t} current={scene.beat?.kind === "talk" ? scene.beat.msg : undefined} /> : null}
       </div>
     </aside>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { besideSpot, seatSpot, VAULT_SPOT, workstationSpot } from "./layout";
+import { besideSpot, MAILBOX_SPOT, seatSpot, VAULT_SPOT, workstationSpot } from "./layout";
 import { beatIndexAt, BUBBLE_H, layoutBubbles, pipelineReached, ownWords, sceneAt, stageAt, thoughtAt } from "./scene";
 import type { Beat, Replay, Slice } from "./types";
 
@@ -145,5 +145,23 @@ describe("own words", () => {
     expect(out).not.toContain("You may also propose");
     expect(out).not.toContain('"picks"');
     expect(out).not.toContain("print(1)");
+  });
+});
+
+describe("the mailbox", () => {
+  it("sends an idle PI to the mailbox while requests to the owner are open, and lights it", () => {
+    const s = sceneAt(replay, 11, 2); // the methodologist is thinking; the PI has nothing to do
+    const pi = s.seats.find((x) => x.seat === "pi")!;
+    expect([pi.x, pi.y, pi.action]).toEqual([MAILBOX_SPOT.x, MAILBOX_SPOT.y, "idle"]);
+    expect(s.mail).toBe(2);
+    expect(s.bubbles.some((b) => b.seat === "pi" && b.text.includes("2 requests"))).toBe(true);
+  });
+
+  it("keeps the PI at work when it has a beat, and at its desk when nothing is open", () => {
+    const busy = sceneAt(replay, 1, 2).seats.find((x) => x.seat === "pi")!;
+    expect([busy.x, busy.y, busy.action]).toEqual([seatSpot("pi").x, seatSpot("pi").y, "type"]);
+    const none = sceneAt(replay, 11).seats.find((x) => x.seat === "pi")!;
+    expect([none.x, none.y]).toEqual([seatSpot("pi").x, seatSpot("pi").y]);
+    expect(sceneAt(replay, 11).mail).toBe(0);
   });
 });

@@ -1,7 +1,7 @@
 // Pure scene derivation: (replay, t) -> everything the lab floor draws. No React, no clocks, so the same code
 // drives replay (t from the player) and live mode (t = the end of the latest snapshot), and is unit-tested.
 
-import { besideSpot, seatSpot, SEAT_ORDER, VAULT_SPOT, workstationSpot } from "./layout";
+import { besideSpot, MAILBOX_SPOT, seatSpot, SEAT_ORDER, VAULT_SPOT, workstationSpot } from "./layout";
 import type { Beat, BeatKind, Call, Replay, Slice } from "./types";
 
 export type Action = "idle" | "type" | "compute" | "talk" | "listen" | "lock" | "refused";
@@ -37,6 +37,7 @@ export interface Scene {
   monitors: Record<string, boolean>; // desk seat or gpu id -> lit
   campaign: number;
   activeSlice: string;
+  mail: number; // open requests to the owner: the mailbox is lit while > 0
 }
 
 export const BUBBLE_W = 176;
@@ -156,7 +157,9 @@ export function layoutBubbles(wanted: Omit<BubbleBox, "x" | "y" | "w" | "h">[], 
   return placed;
 }
 
-export function sceneAt(replay: Replay, t: number): Scene {
+// `mail`: open requests to the owner. While there are any, the PI waits at the mailbox whenever it has nothing else to
+// do (its own beats and being talked to still take it back to work).
+export function sceneAt(replay: Replay, t: number, mail = 0): Scene {
   const beats = replay.beats;
   const index = beatIndexAt(beats, t);
   const beat = index >= 0 ? beats[index] : null;
@@ -165,8 +168,9 @@ export function sceneAt(replay: Replay, t: number): Scene {
   const last: Record<string, number> = {};
   for (let k = 0; k <= index; k++) last[beats[k].actor] = k;
   const seats: SeatState[] = seatNames.map((seat) => {
-    const { x, y, action } = spotFor(seat, beat);
-    return { seat, x, y, action, current: beat?.actor === seat, lastBeat: last[seat] ?? null };
+    const spot = spotFor(seat, beat);
+    const { x, y } = seat === "pi" && mail > 0 && spot.action === "idle" ? MAILBOX_SPOT : spot;
+    return { seat, x, y, action: spot.action, current: beat?.actor === seat, lastBeat: last[seat] ?? null };
   });
   const wanted: Omit<BubbleBox, "x" | "y" | "w" | "h">[] = [];
   for (const s of seats) {
@@ -179,6 +183,8 @@ export function sceneAt(replay: Replay, t: number): Scene {
       const b = beats[s.lastBeat];
       if (t - (b.at + b.dur) < HOLD && b.kind !== "queue") wanted.push({ seat: s.seat, text: b.text, tone: b.kind, strong: false });
     }
+    if (s.seat === "pi" && mail > 0 && s.action === "idle" && !wanted.some((w) => w.seat === "pi"))
+      wanted.push({ seat: "pi", text: `Waiting on the owner: ${mail} request${mail > 1 ? "s" : ""} in the mailbox`, tone: "talk", strong: false });
   }
   const monitors: Record<string, boolean> = {};
   if (beat?.kind === "think") monitors[beat.actor] = true;
@@ -194,6 +200,7 @@ export function sceneAt(replay: Replay, t: number): Scene {
     monitors,
     campaign: beat?.campaign ?? 1,
     activeSlice,
+    mail,
   };
 }
 

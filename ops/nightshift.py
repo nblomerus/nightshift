@@ -23,8 +23,13 @@ def main(argv=None):
     kn.add_argument("--import", dest="import_run", default=None, help="backfill the graph from a finished run directory")
     rp = sub.add_parser("reply", help="answer the lab: the PI reads it in its next plan")
     rp.add_argument("message")
+    rp.add_argument("--request", default=None, help="the request this answers (closes it); see `requests`")
     rp.add_argument("--rigspec", default=None)
     rp.add_argument("--knowledge", default=None)
+    rq = sub.add_parser("requests", help="what the PI has asked the owner")
+    rq.add_argument("--all", action="store_true", help="answered requests too")
+    rq.add_argument("--rigspec", default=None)
+    rq.add_argument("--knowledge", default=None)
     f = sub.add_parser("floor", help="lab floor dashboard")
     f.add_argument("mode", choices=["serve", "build"])
     f.add_argument("root")
@@ -42,8 +47,20 @@ def main(argv=None):
         if not a.message.strip():
             ap.error("reply: the message is empty")
         spec = load_rigspec(a.rigspec)
-        Knowledge(kg_path(spec), spec.get("rig", "rig")).reply(a.message.strip())
+        try:
+            Knowledge(kg_path(spec), spec.get("rig", "rig")).reply(a.message.strip(), a.request)
+        except KeyError as e:
+            ap.error(f"reply: {e.args[0]}")
         print(f"sent to the {spec.get('rig', 'rig')} PI; it reads it from its next plan")
+        return
+
+    if a.cmd == "requests":
+        from harness.daemon import load_rigspec
+        from state.knowledge import Knowledge
+
+        spec = load_rigspec(a.rigspec)
+        reqs = Knowledge(kg_path(spec), spec.get("rig", "rig")).requests(None if a.all else "open")
+        print("\n\n".join(request_text(r) for r in reqs) or "No open requests.")
         return
 
     if a.cmd == "knowledge":
@@ -97,6 +114,15 @@ def main(argv=None):
             serve(a.root, a.port)
         else:
             print(build_static(a.root, a.out))
+
+
+def request_text(r):
+    """A request as a brief the owner can act on, or paste to someone who will."""
+    lines = [f"[{r['status']}] {r['id']} (asked {r['asks']}x)", f"What: {r['what']}"]
+    lines += [f"{k.title()}: {r[k]}" for k in ("why", "how", "done") if r.get(k)]
+    if r.get("reply"):
+        lines.append(f"Owner's reply: {r['reply']}")
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

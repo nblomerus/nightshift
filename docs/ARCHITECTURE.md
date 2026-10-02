@@ -76,8 +76,9 @@ passes the checks and the decision agrees. A promoted champion carries its code 
 graph, then a kernel check of the champion against the original baseline on the design-B confirmation months. It
 pings the owner once per event (macOS notification + `knowledge/alerts.jsonl`) when the goal is reached (it then
 stops), the PI asks the owner for something the lab cannot get itself (`ask_owner`, at most one ping a day), runs in
-a row test nothing (stall), or a run crashes (once a day per error). The owner answers with `make reply MSG="..."`:
-the reply goes into the knowledge graph and the PI's brief from its next plan. The rigspec's `data_notes` tell the PI
+a row test nothing (stall), or a run crashes (once a day per error). A request is a brief, {what, why, how, done}, kept
+in the knowledge graph as open until the owner answers it: in the lab floor's mailbox, or with `make requests` and
+`make reply REQUEST=<id> MSG="..."`. Answers go into the PI's brief from its next plan. The rigspec's `data_notes` tell the PI
 what data it can and cannot get, so it does not ask for what is ruled out (weather at this horizon) or what
 accumulates by itself (the censoring mask). The supervisor waits by the wall clock, so a Mac that slept starts the
 next run when it wakes, and a digest missed overnight goes out the next morning. The goal lives in the rigspec's

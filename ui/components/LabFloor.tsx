@@ -8,6 +8,7 @@ import {
   DESK_W,
   DESKS,
   LOOKS,
+  MAILBOX,
   MEETING_TABLE,
   ROOMS,
   SCENE,
@@ -20,7 +21,7 @@ import {
 import { campaignOf, type Scene, stageAt, type Tone } from "@/lib/scene";
 import type { Replay } from "@/lib/types";
 
-import { Armchair, Cabinet, Character, Coffee, Desk, MeetingTable, Plant, Rack, Shelf, Sofa, VaultDoor, Workstation } from "./sprites";
+import { Armchair, Cabinet, Character, Coffee, Desk, Mailbox, MeetingTable, Plant, Rack, Shelf, Sofa, VaultDoor, Workstation } from "./sprites";
 
 const TONE: Record<Tone, string> = {
   think: "bg-[#F4F6FA] text-[#10162B] border-[#53648E]",
@@ -41,6 +42,7 @@ export interface FloorProps {
   onComputer: (key: string) => void;
   onSlice: (id: string) => void;
   onBubble: (seat: string) => void;
+  onMailbox: () => void;
 }
 
 function useFit(ref: React.RefObject<HTMLDivElement | null>) {
@@ -70,7 +72,7 @@ function RoomLabel({ label, status, tone }: { label: string; status: string; ton
   );
 }
 
-export function LabFloor({ replay, scene, t, selectedSeat, onSeat, onComputer, onSlice, onBubble }: FloorProps) {
+export function LabFloor({ replay, scene, t, selectedSeat, onSeat, onComputer, onSlice, onBubble, onMailbox }: FloorProps) {
   const ref = useRef<HTMLDivElement>(null);
   const scale = useFit(ref);
   const [moving, setMoving] = useState<Record<string, boolean>>({});
@@ -124,6 +126,20 @@ export function LabFloor({ replay, scene, t, selectedSeat, onSeat, onComputer, o
         <div className="absolute" style={{ left: 240, top: 72 }}>
           <Plant />
         </div>
+        <button
+          type="button"
+          onClick={onMailbox}
+          aria-label={scene.mail ? `Mailbox: ${scene.mail} open request${scene.mail > 1 ? "s" : ""} from the PI` : "Mailbox: no open requests"}
+          className={`absolute rounded-sm hover:outline hover:outline-2 hover:outline-[#FFD05A] ${scene.mail ? "drop-shadow-[0_0_8px_#FFD05A]" : ""}`}
+          style={{ left: MAILBOX.x, top: MAILBOX.y, zIndex: 25 }}
+        >
+          <Mailbox lit={scene.mail > 0} />
+          {scene.mail ? (
+            <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#10162B] bg-[#FF8585] px-1 font-pixel text-[9px] text-[#10162B]">
+              {scene.mail}
+            </span>
+          ) : null}
+        </button>
 
         {/* Research bay whiteboard: the campaign's slices */}
         <div
