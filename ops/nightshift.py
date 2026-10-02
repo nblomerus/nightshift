@@ -21,6 +21,10 @@ def main(argv=None):
     kn.add_argument("--knowledge", default=None)
     kn.add_argument("--json", action="store_true", help="the whole graph as JSON")
     kn.add_argument("--import", dest="import_run", default=None, help="backfill the graph from a finished run directory")
+    rp = sub.add_parser("reply", help="answer the lab: the PI reads it in its next plan")
+    rp.add_argument("message")
+    rp.add_argument("--rigspec", default=None)
+    rp.add_argument("--knowledge", default=None)
     f = sub.add_parser("floor", help="lab floor dashboard")
     f.add_argument("mode", choices=["serve", "build"])
     f.add_argument("root")
@@ -30,6 +34,17 @@ def main(argv=None):
 
     def kg_path(spec):
         return a.knowledge or os.path.join("knowledge", f"{spec.get('rig', 'rig')}.db")
+
+    if a.cmd == "reply":
+        from harness.daemon import load_rigspec
+        from state.knowledge import Knowledge
+
+        if not a.message.strip():
+            ap.error("reply: the message is empty")
+        spec = load_rigspec(a.rigspec)
+        Knowledge(kg_path(spec), spec.get("rig", "rig")).reply(a.message.strip())
+        print(f"sent to the {spec.get('rig', 'rig')} PI; it reads it from its next plan")
+        return
 
     if a.cmd == "knowledge":
         import json

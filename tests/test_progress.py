@@ -49,3 +49,14 @@ def test_one_digest_a_day_after_the_digest_hour(tmp_path, monkeypatch):
     assert labd.maybe_digest(state, alerts, str(root), "forecast-lab", now=evening)
     assert labd.maybe_digest(state, alerts, str(root), "forecast-lab", now=evening) is None
     assert (root / "knowledge" / "digest-2026-10-01.md").exists()
+
+
+def test_a_digest_missed_overnight_goes_out_the_next_morning(tmp_path, monkeypatch):
+    monkeypatch.setattr(labd, "NOTIFY", False)
+    root = lab(tmp_path, n=1)
+    state, alerts = {"digest_day": "2026-09-30"}, str(root / "knowledge" / "alerts.jsonl")
+    next_morning = dt.datetime(2026, 10, 2, 8, 30)  # the Mac slept through the evening of 1 October
+    assert labd.maybe_digest(state, alerts, str(root), "forecast-lab", now=next_morning)
+    assert state["digest_day"] == "2026-10-01" and (root / "knowledge" / "digest-2026-10-01.md").exists()
+    assert labd.maybe_digest(state, alerts, str(root), "forecast-lab", now=next_morning.replace(hour=11)) is None
+    assert labd.maybe_digest(state, alerts, str(root), "forecast-lab", now=next_morning.replace(hour=21))

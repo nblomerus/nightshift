@@ -1,6 +1,12 @@
 {
  "rig": "bikeshare-lab",
  "mission": "Improve the two-month-ahead forecast of daily pickups at each bike-share station, measured by station-day WAPE on availability-censored data, against the current champion model.",
+ "data_notes": [
+  "Weather is out of scope: no forecast reaches the 32-62 day horizon, climatology is already in the seasonal features, and observed weather for the target month is a leak (docs/specs/bikeshare.md §3).",
+  "Station availability (the censoring mask) and capacity history exist only from the lab's own GBFS snapshots, collected every 5 minutes since 2026-09-28. Nobody publishes earlier history. The first fully masked trip month is 2026-10, published in early November; the mask grows by itself, so do not ask for it.",
+  "Trip history (2021-02 onward) is ingested automatically each month when Divvy publishes it.",
+  "Things the owner could plausibly add, if one would change what the lab can test: a public events calendar, planned station openings or closures, system-wide fare or policy changes."
+ ],
  "judge": "judges.bikeshare",
  "judge_config": {
   "root": "data/bikeshare/chi"

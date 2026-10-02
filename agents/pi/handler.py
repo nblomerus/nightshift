@@ -82,10 +82,18 @@ def pi_plan(rig, seat, task, ctx):
         + (" and at most one new idea. " if new_ideas else ". ")
         + "Do not pick changes already graded A. If nothing is worth testing, pick none. Also state one lesson the lab "
         "should carry forward. "
-        "If the most promising way to improve the forecast needs data the lab does not have (for example weather "
-        "forecasts, an events calendar, station capacity changes), say what and why in needs_external_data; otherwise "
-        "null. Keep testing what the available data allows meanwhile. "
-        'Reply JSON: {"picks": [{"key": "...", "rationale": "..."}], "lesson": "...", "needs_external_data": null}',
+        + (
+            "What the lab can and cannot get (fixed by the owner; do not ask for anything ruled out here):\n"
+            + "\n".join(f"- {n}" for n in rig.spec["data_notes"])
+            + "\n"
+            if rig.spec.get("data_notes")
+            else ""
+        )
+        + "Work autonomously. Ask the owner only for something the lab cannot get or decide itself and that would "
+        "change what it can test (data, access, a decision only the owner can make): say what, why, and how the owner "
+        "could provide it in ask_owner; otherwise null. The owner is notified and answers later; keep testing what "
+        "the available data allows meanwhile. "
+        'Reply JSON: {"picks": [{"key": "...", "rationale": "..."}], "lesson": "...", "ask_owner": null}',
     )
     picks, dropped = [], []
     for p in out.get("picks", []):
@@ -117,10 +125,10 @@ def pi_plan(rig, seat, task, ctx):
         rig.send(seat, seat, "Picks not taken: " + "; ".join(dropped))
     if out.get("lesson"):
         ctx["lessons"].append(f"(after campaign {ctx['campaign'] - 1}) {out['lesson']}")
-    need = out.get("needs_external_data")
+    need = out.get("ask_owner", out.get("needs_external_data"))
     if isinstance(need, str) and need.strip() and need.strip().lower() not in ("null", "none", "no"):
         ctx.setdefault("external_requests", []).append(dict(campaign=ctx["campaign"], request=need.strip()[:800]))
-        rig.send(seat, seat, f"Needs external data: {need.strip()[:800]}")  # the supervisor pings the owner
+        rig.send(seat, seat, f"Asked the owner: {need.strip()[:800]}")  # the supervisor pings the owner
         if kg is not None:
             kg.request(ctx["run_id"], ctx["campaign"], need.strip()[:800])
     ctx["alpha_per_test"] = rig.spec["decision_standards"]["alpha_campaign"] / max(len(picks), 1)

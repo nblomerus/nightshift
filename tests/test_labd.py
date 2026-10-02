@@ -63,21 +63,49 @@ def test_a_stall_pings_once(spec_dir, tmp_path):
     assert state["idle"] == 3 and len(stalls) == 1
 
 
-def test_a_data_request_pings_once_a_day_however_it_is_worded(spec_dir, tmp_path):
+def test_a_request_to_the_owner_pings_once_a_day_however_it_is_worded(spec_dir, tmp_path):
     state = {}
-    first = pi({"picks": [], "lesson": "l", "needs_external_data": "Daily weather forecasts for Chicago"})
+    first = pi({"picks": [], "lesson": "l", "ask_owner": "A public events calendar for Chicago"})
     go(spec_dir, tmp_path, first, state)
-    go(spec_dir, tmp_path, pi({"picks": [], "lesson": "l", "needs_external_data": "Weather and events"}), state)
-    needs = [a for a in alerts(tmp_path) if a["kind"] == "needs data"]
-    assert len(needs) == 1 and "weather" in needs[0]["message"]
+    go(spec_dir, tmp_path, pi({"picks": [], "lesson": "l", "needs_external_data": "Events"}), state)  # older key
+    needs = [a for a in alerts(tmp_path) if a["kind"] == "needs you"]
+    assert len(needs) == 1 and "events calendar" in needs[0]["message"] and "make reply" in needs[0]["message"]
+
+
+def test_the_pi_is_told_what_data_it_cannot_get(spec_dir, tmp_path):
+    prompts, base = [], pi({"picks": [], "lesson": "l"})
+
+    def llm(prompt, system=None, tier=None):
+        prompts.append(prompt)
+        return base(prompt, system, tier)
+
+    go(spec_dir, tmp_path, llm, {})
+    plan = next(p for p in prompts if "Pick up to TWO" in p)
+    assert "Weather is out of scope" in plan and "ask_owner" in plan and "weather forecasts, an events" not in plan
 
 
 def test_a_crash_pings_and_the_supervisor_carries_on(spec_dir, tmp_path):
     def broken(prompt, system=None, tier=None):
         raise ConnectionError("endpoint down")
 
-    assert go(spec_dir, tmp_path, broken, {}) == "crashed"
+    state = {}
+    assert go(spec_dir, tmp_path, broken, state) == "crashed"
+    assert go(spec_dir, tmp_path, broken, state) == "crashed"  # the same outage an hour later: no second ping today
     assert [a["kind"] for a in alerts(tmp_path)] == ["crashed"]
+    assert any(k.startswith(f"crash:{labd.dt.date.today()}:") for k in state["seen"])
+
+
+def test_the_wait_follows_the_wall_clock_when_the_mac_sleeps(monkeypatch):
+    clock, naps = [1000.0], []
+
+    def nap(s):
+        naps.append(s)
+        clock[0] += s if len(naps) > 1 else 5000.0  # the first nap spans a lid closed for 5000 s
+
+    monkeypatch.setattr(labd.time, "time", lambda: clock[0])
+    monkeypatch.setattr(labd.time, "sleep", nap)
+    labd.wait_until(1000.0 + 3600)
+    assert len(naps) == 1 and naps[0] == 60.0  # woke past the target: the next run starts at once
 
 
 def test_the_lab_stops_at_its_goal(spec_dir, tmp_path):
@@ -101,3 +129,22 @@ def test_open_requests_are_in_the_pis_brief_so_it_does_not_ask_again(tmp_path):
     kg.request(run_id, 1, "Daily weather forecasts for Chicago")
     brief = kg.brief(bj.BASELINE, "base", [])
     assert "already sent to the owner" in brief and "Daily weather forecasts" in brief
+
+
+def test_the_owners_reply_reaches_the_pis_brief(tmp_path):
+    from ops import nightshift
+    from state.knowledge import Knowledge
+
+    kg_path = str(tmp_path / "kg.db")
+    nightshift.main(["reply", "No events calendar exists; keep going", "--rigspec", "rigs/bikeshare-lab.json",
+                     "--knowledge", kg_path])  # fmt: skip
+    brief = Knowledge(kg_path, load_rigspec("rigs/bikeshare-lab.json")["rig"]).brief(bj.BASELINE, "base", [])
+    assert "Replies from the owner" in brief and "No events calendar exists" in brief
+    assert "Replies from the owner" not in Knowledge(kg_path, "another-rig").brief(bj.BASELINE, "base", [])
+
+
+def test_an_empty_reply_is_refused(tmp_path):
+    from ops import nightshift
+
+    with pytest.raises(SystemExit):
+        nightshift.main(["reply", "  ", "--knowledge", str(tmp_path / "kg.db")])

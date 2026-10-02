@@ -75,8 +75,13 @@ passes the checks and the decision agrees. A promoted champion carries its code 
 `make labd` (or the launchd job it prints) runs the lab until its goal: refresh data, one lab run with the knowledge
 graph, then a kernel check of the champion against the original baseline on the design-B confirmation months. It
 pings the owner once per event (macOS notification + `knowledge/alerts.jsonl`) when the goal is reached (it then
-stops), the PI asks for data the lab does not have (`needs_external_data`), runs in a row test nothing (stall), or a
-run crashes. The goal lives in the rigspec's decision standards.
+stops), the PI asks the owner for something the lab cannot get itself (`ask_owner`, at most one ping a day), runs in
+a row test nothing (stall), or a run crashes (once a day per error). The owner answers with `make reply MSG="..."`:
+the reply goes into the knowledge graph and the PI's brief from its next plan. The rigspec's `data_notes` tell the PI
+what data it can and cannot get, so it does not ask for what is ruled out (weather at this horizon) or what
+accumulates by itself (the censoring mask). The supervisor waits by the wall clock, so a Mac that slept starts the
+next run when it wakes, and a digest missed overnight goes out the next morning. The goal lives in the rigspec's
+decision standards.
 
 ## Knowledge graph (state/knowledge.py)
 The lab's memory across runs, one SQLite graph per rig (`knowledge/<rig>.db`, gitignored). After every campaign
