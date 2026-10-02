@@ -70,7 +70,10 @@ Items 1–4 close gaps found in real-model runs; 5–8 extend the lab; 9–10 ar
   8a GBFS availability collector (first: availability history only accrues from the day it starts);
   8b domain-pluggable lab (judge named in the rigspec; data roles instead of seeds);
   8c trip ingest + `judges/bikeshare.py` + `rigs/bikeshare-lab.json`;
-  8d censoring mask; 8e monthly prospective lock and score; 8f foundation-model challenger (optional).
+  8d censoring mask; 8e monthly prospective lock and score; 8f foundation-model challenger (optional);
+  8g street events from CDOT permits, known from their processed date (spec:
+  [docs/specs/bikeshare-events.md](docs/specs/bikeshare-events.md); works permits are out of scope, they are
+  processed on the day the work starts).
 - **Acceptance:** per sub-item in the spec. Tests run on a synthetic fixture in the operator's schema; real data
   stays under the gitignored `data/` (the licence forbids redistributing it).
 
