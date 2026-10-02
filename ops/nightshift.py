@@ -21,6 +21,7 @@ def main(argv=None):
     kn.add_argument("--knowledge", default=None)
     kn.add_argument("--json", action="store_true", help="the whole graph as JSON")
     kn.add_argument("--import", dest="import_run", default=None, help="backfill the graph from a finished run directory")
+    kn.add_argument("--regrade", default=None, metavar="RUNS_DIR", help="re-read grade-B tests from their proof files")
     rp = sub.add_parser("reply", help="answer the lab: the PI reads it in its next plan")
     rp.add_argument("message")
     rp.add_argument("--request", default=None, help="the request this answers (closes it); see `requests`")
@@ -77,6 +78,14 @@ def main(argv=None):
             from harness.knowledge_import import import_run
 
             print(f"imported {a.import_run}: {import_run(kg, a.import_run, judge)}")
+        if a.regrade:
+            from harness.knowledge_import import regrade
+
+            changed = regrade(kg, a.regrade)
+            print(f"regraded {len(changed)} test(s)")
+            for tid, grade in changed.items():
+                print(f"  {tid}: {grade}")
+            return
         if a.json:
             print(json.dumps(kg.export(), indent=1, default=str))
             return

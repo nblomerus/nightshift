@@ -22,6 +22,8 @@ import os
 import sqlite3
 import time
 
+UNDERPOWERED = "underpowered at largest design"  # agents/statistician/handler.py's park note
+
 
 def config_id(config: dict) -> str:
     return "cfg:" + hashlib.sha256(json.dumps(config, sort_keys=True, default=str).encode()).hexdigest()[:16]
@@ -209,12 +211,13 @@ class Knowledge:
     def is_repeat(self, treatment: dict, comparator: dict, evaluation: str, data_key) -> bool:
         """A decided test with the same treatment, comparator, evaluation (the judge's scoring semantics and data; the
         full judge digest for judges that do not declare one) and data already exists: running it again scores the same
-        data under the same rule and can only reproduce the answer."""
+        data under the same rule and can only reproduce the answer. A test parked as underpowered at the largest
+        design counts too: the power check is seeded, so on the same data it parks again."""
         return any(
             t["treatment"] == config_id(treatment)
             and t.get("evaluation", t["judge"]) == evaluation
             and t["data"] == str(data_key)
-            and t["decision"]
+            and (t["decision"] or (t["stage"] == "parked" and (t.get("reason") or "").startswith(UNDERPOWERED)))
             for t in self.tests(comparator)
         )
 

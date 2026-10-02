@@ -78,6 +78,18 @@ def test_evidence_grades():
     assert sk.evidence_grade("supported", True, 0, False).startswith("D")
 
 
+def test_a_grade_says_whether_replication_is_pending_or_failed_and_negatives_replicate():
+    from agents.common import replication_status
+
+    assert sk.evidence_grade("supported", None, 0, True) == "B: supported, awaiting replication"
+    assert sk.evidence_grade("supported", False, 0, True) == "B: supported, not replicated"
+    assert sk.evidence_grade("no_effect", True, 0, True) == "A: negative result, replicated"
+    assert replication_status("no_effect", None) is None
+    assert replication_status("no_effect", {"decision": "no_effect", "same_treatment": True}) is True
+    assert replication_status("supported", {"decision": "no_effect", "same_treatment": True}) is False
+    assert replication_status("supported", {"decision": "supported", "same_treatment": False}) is False
+
+
 def test_judge_digest_is_part_of_the_locked_body():
     a, b = _pre(judge_digest="aaa").lock(), _pre(judge_digest="bbb").lock()
     assert a.verify() and b.verify() and a.digest != b.digest

@@ -67,6 +67,19 @@ def test_a_repeat_is_the_same_change_champion_judge_and_data(tmp_path):
     assert len(kg.tests()) == 1  # writing the same slice again updates it, never duplicates it
 
 
+def test_a_change_parked_as_underpowered_is_a_repeat_but_other_parks_are_not(tmp_path):
+    kg = Knowledge(str(tmp_path / "kg.db"), "lab")
+    run_id = kg.begin_run("r", "judge-1")
+    record = dict(change_desc="x", comparator=BASE, comparator_desc="base", judge="judge-1", data_key="confirmation",
+                  design="B", decision=None, grade=None, stage="parked")  # fmt: skip
+    kg.test(run_id, 1, "C1-S1-a", change="a", treatment=YOY, reason="underpowered at largest design", **record)
+    other = dict(BASE, holidays=True)
+    kg.test(run_id, 1, "C1-S2-b", change="b", treatment=other, reason="revision cap reached; last objection: x", **record)
+    assert kg.is_repeat(YOY, BASE, "judge-1", "confirmation")  # the seeded power check would park it again
+    assert not kg.is_repeat(YOY, BASE, "judge-2", "confirmation")  # new data: power may differ
+    assert not kg.is_repeat(other, BASE, "judge-1", "confirmation")  # a design objection can be answered
+
+
 def test_the_pi_is_never_offered_a_repeat_and_is_told_why(tmp_path):
     spec = load_rigspec()
     rig = Rig(str(tmp_path / "rig"), spec)
@@ -102,3 +115,27 @@ def test_a_run_from_before_the_graph_can_be_imported(tmp_path):
     champ, desc = kg.current_champion()
     assert "last year" in desc and "promotion weeks" in desc
     assert {t["change"] for t in kg.tests() if t["decision"]} >= {"last_year_window", "promo_feature"}
+
+
+def test_regrade_rewrites_b_grades_from_the_replication_proof(tmp_path):
+    import json
+
+    from harness.knowledge_import import regrade
+    from judges.forecast_lab import BASELINE
+    from state.knowledge import Knowledge
+
+    kg = Knowledge(str(tmp_path / "kg.db"), "lab")
+    run = kg.begin_run("r1", "j")
+    common = dict(change_desc="x", treatment=dict(BASELINE, a=1), comparator=BASELINE, comparator_desc="base",
+                  judge="j", data_key="k", design="B", stage="written")  # fmt: skip
+    for sid, dec, grade, rep in (("S1", "supported", "B: supported, awaiting replication", "no_effect"),
+                                 ("S2", "no_effect", "B: negative result, awaiting replication", "no_effect"),
+                                 ("S3", "supported", "C: deviated from prereg (exploratory)", "supported")):  # fmt: skip
+        kg.test(run, 1, sid, change=sid, decision=dict(decision=dec, point=0.1, lo=0.0, hi=0.2), grade=grade, **common)
+        proof = tmp_path / "runs" / "r1" / "slices" / sid / "proof"
+        proof.mkdir(parents=True)
+        (proof / "replication.json").write_text(json.dumps({"decision": rep, "same_treatment": True}))
+    changed = regrade(kg, str(tmp_path / "runs"))
+    assert sorted(changed.values()) == ["A: negative result, replicated", "B: supported, not replicated"]
+    assert {t["grade"] for t in kg.tests()} >= {"C: deviated from prereg (exploratory)"}  # C is left alone
+    assert regrade(kg, str(tmp_path / "runs")) == {}  # idempotent

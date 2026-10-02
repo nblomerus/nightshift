@@ -128,13 +128,16 @@ def run_test(prereg: Preregistration, run_arm: Callable[[dict], dict], rng, ledg
 
 
 def evidence_grade(decision: Decision, replicated: bool | None, deviations: int, controls_ok: bool) -> str:
-    """Ordinal grade the lab's status ladder should read, instead of an LLM-reported confidence."""
+    """Ordinal grade the lab's status ladder should read, instead of an LLM-reported confidence. `replicated` is
+    None before any replication, True when the replication reached the same decision, False when it did not: a
+    failed replication stays at B, and says so rather than "awaiting"."""
     if not controls_ok:
         return "D: protocol failed controls"
     if deviations:
         return "C: deviated from prereg (exploratory)"
+    status = {None: "awaiting replication", False: "not replicated"}
     if decision == "supported":
-        return "A: replicated" if replicated else "B: supported, awaiting replication"
+        return "A: replicated" if replicated else f"B: supported, {status[replicated]}"
     if decision in ("no_effect", "harmful"):
-        return "A: negative result, replicated" if replicated else "B: negative result, awaiting replication"
+        return "A: negative result, replicated" if replicated else f"B: negative result, {status[replicated]}"
     return "C: inconclusive"
