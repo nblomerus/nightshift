@@ -20,6 +20,7 @@ anything: decisions come from the kernel inside each run; the goal check is the 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import json
 import os
@@ -41,9 +42,12 @@ def alert(path, kind, message, key=None, seen=None, notify=True):
             return False
         seen.add(key)
     rec = dict(t=dt.datetime.now(dt.UTC).isoformat(), kind=kind, message=message)
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "a") as f:
-        f.write(json.dumps(rec) + "\n")
+    try:  # a full disk must not turn the alert itself into the crash it reports
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except OSError as e:
+        print(f"(could not record the alert: {e})", flush=True)
     print(f"ALERT {kind}: {message}", flush=True)
     if notify and NOTIFY and sys.platform == "darwin":
         text = message.replace('"', "'")[:230]
@@ -67,21 +71,40 @@ def goal_status(judge, champion, goal):
     return dict(**est, goal=goal, met=bool(est["lo"] >= goal))
 
 
-def refresh_data(judge_config, system, log):
-    """New trip months and the censoring table, when the judge reads ingested data."""
+INGEST_ESCALATE = 3  # a month that fails to ingest this many cycles running is put to the owner
+COLLECTOR_STALE_S = 3 * 3600  # GBFS snapshots arrive every 5 minutes; this long without one means the collector died
+
+
+def refresh_data(judge_config, system, log, warn=None, state=None):
+    """New trip months, the censoring table and the events snapshot, when the judge reads ingested data. Failures are
+    logged, not fatal; `warn(kind, message, key)` puts the ones that persist to the owner (a month that keeps failing,
+    unreadable snapshot days, a silent collector, ingest down for a day)."""
+    warn = warn or (lambda *a, **k: None)
+    state = state if state is not None else {}
     root = judge_config.get("root")
     if not root:
         return
+    today = dt.date.today()
     try:
         from ops.bikeshare_ingest import ingest
 
         with open(os.path.join(root, "manifest.json")) as f:
             before = set(json.load(f)["months"])
-        after = set(ingest(system, root, log=log)["months"])
+        manifest = ingest(system, root, log=log)
+        after = set(manifest["months"])
         if after - before:
             log(f"new trip months: {sorted(after - before)}")
+        state["ingest_errors"] = 0
+        for month, f in (manifest.get("failed") or {}).items():
+            if f.get("attempts", 0) >= INGEST_ESCALATE:
+                msg = f"trip month {month} has failed to ingest {f['attempts']} times since {f.get('first_seen')}"
+                warn("data", f"{msg}: {f.get('error')}", f"ingest:{month}:{today}")
     except Exception as e:  # network or operator hiccup: the lab still runs on what it has
+        state["ingest_errors"] = state.get("ingest_errors", 0) + 1
         log(f"ingest skipped: {type(e).__name__}: {e}")
+        if state["ingest_errors"] >= 24:  # a day of hourly failures: new months (and the lock) would be missed
+            warn("data", f"trip ingest has failed {state['ingest_errors']} cycles running: {type(e).__name__}: {e}",
+                 f"ingest-down:{today}")  # fmt: skip
     try:
         from zoneinfo import ZoneInfo
 
@@ -90,8 +113,18 @@ def refresh_data(judge_config, system, log):
 
         gbfs = os.path.join(os.path.dirname(os.path.dirname(root)), "gbfs", system)
         if os.path.isdir(gbfs):
-            today = dt.datetime.now(ZoneInfo(SYSTEMS[system]["tz"])).date().isoformat()
-            reduce_all(gbfs, os.path.join(root, "censor_day.csv.gz"), today=today)
+            local_today = dt.datetime.now(ZoneInfo(SYSTEMS[system]["tz"])).date().isoformat()
+            _, skipped = reduce_all(gbfs, os.path.join(root, "censor_day.csv.gz"), today=local_today)
+            if skipped:
+                names = ", ".join(os.path.basename(p) for p, _ in skipped[:3])
+                warn("data", f"{len(skipped)} GBFS snapshot day(s) unreadable, left out of the censoring mask: {names}",
+                     f"gbfs-skipped:{today}")  # fmt: skip
+            days = [os.path.join(gbfs, n) for n in os.listdir(gbfs) if n.endswith(".csv.gz")]
+            newest = max((os.path.getmtime(p) for p in days), default=0)
+            if days and time.time() - newest > COLLECTOR_STALE_S:
+                hours = (time.time() - newest) / 3600
+                msg = f"the GBFS collector for {system} has written nothing for {hours:.0f} h"
+                warn("data", f"{msg}: the censoring mask stops growing", f"collector:{today}")
     except Exception as e:
         log(f"censor table skipped: {type(e).__name__}: {e}")
     try:  # street-event permits: a dated snapshot a month (docs/specs/bikeshare-events.md)
@@ -109,9 +142,13 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
     from harness.daemon import load_rigspec, run
 
     spec = load_rigspec(spec_path)
-    if refresh:
-        refresh_data(spec.get("judge_config", {}), spec.get("judge_config", {}).get("system", "chi"), log)
     seen = set(state.setdefault("seen", []))
+    if refresh:
+
+        def warn(kind, message, key):
+            alert(alerts, kind, message, key=key, seen=seen)
+
+        refresh_data(spec.get("judge_config", {}), spec.get("judge_config", {}).get("system", "chi"), log, warn, state)
     name = "auto-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     try:
         _, ctx, _ = run(
@@ -129,7 +166,11 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
         state["seen"] = sorted(seen)
         return "crashed"
     try:
-        return after_run(ctx, spec, name, knowledge, state, alerts, seen, max_idle, log)
+        status = after_run(ctx, spec, name, knowledge, state, alerts, seen, max_idle, log)
+        if refresh:  # the same switch as the data refresh: both reach outside (data, git); tests turn them off
+            prospective_tick(spec, knowledge, alerts, seen, log)
+        state["seen"] = sorted(seen)
+        return status
     except Exception as e:  # a failure in the supervisor's own checks must not kill it silently
         alert(alerts, "crashed", f"checks after {name} failed: {type(e).__name__}: {e}",
               key=f"crash:{dt.date.today()}:after:{type(e).__name__}", seen=seen)  # fmt: skip
@@ -142,7 +183,12 @@ def after_run(ctx, spec, name, knowledge, state, alerts, seen, max_idle, log):
     """What the supervisor checks after a run: idle streak, owner requests, stall, goal."""
     from agents.common import load_judge
 
-    tested = sum(len(c["tested"]) + len(c["parked"]) + len(c.get("stalled", [])) for c in ctx["campaigns"])
+    # Progress is a decision or a park; a slice stalled mid-workflow (a seat kept failing) is a fault, not progress.
+    tested = sum(len(c["tested"]) + len(c["parked"]) for c in ctx["campaigns"])
+    stuck = [s for c in ctx["campaigns"] for s in c.get("stalled", [])]
+    if stuck:
+        alert(alerts, "handler stuck", f"{len(stuck)} slice(s) stalled mid-workflow in {name} (a seat kept failing): "
+              f"{', '.join(stuck[:3])}", key=f"stuck:{dt.date.today()}", seen=seen)  # fmt: skip
     state["idle"] = 0 if tested else state.get("idle", 0) + 1
     state["runs"] = state.get("runs", 0) + 1
     log(f"{name}: {tested} slice(s) tested or stopped; idle streak {state['idle']}")
@@ -233,6 +279,15 @@ def main(argv=None):
     state = load_state(state_path, alerts)
     if state.get("status") == "running":  # the last process died mid-run (killed, reloaded, power lost)
         print(f"resumed after an unclean exit during {state.get('last_run', 'a run')}", flush=True)
+    missing = [v for v in ("LLM_BASE_URL", "REASONING_MODEL") if not os.environ.get(v)]
+    if missing:  # launchd restarts us every 5 minutes: say why, once a day, instead of crash-looping silently
+        seen = set(state.setdefault("seen", []))
+        alert(alerts, "crashed", f"supervisor cannot start: {', '.join(missing)} not set in its environment",
+              key=f"env:{dt.date.today()}", seen=seen)  # fmt: skip
+        state["seen"] = sorted(seen)
+        with contextlib.suppress(OSError):
+            save_state(state_path, state)
+        return 2
     watchdog(alerts)
     llm = openai_compatible_llm(
         os.environ["LLM_BASE_URL"],
@@ -245,17 +300,23 @@ def main(argv=None):
         t0 = time.time()
         beat()
         state.update(last_start=t0, every=a.every, status="running")
-        save_state(state_path, state)
         try:
+            save_state(state_path, state)
             status = cycle(llm, a.rigspec, knowledge, a.runs_dir, a.campaigns, state, alerts, a.max_idle)
             state["status"] = "waiting" if status != "goal" else "goal reached"
             maybe_digest(state, alerts, REPO_ROOT, spec.get("rig", "rig"))
         except Exception as e:  # last line of defence: report, then keep the schedule
             status = "crashed"
             state["status"] = "waiting"
-            alert(alerts, "crashed", f"supervisor: {type(e).__name__}: {e}")
+            seen = set(state.setdefault("seen", []))
+            key = f"supervisor:{dt.date.today()}:{type(e).__name__}"
+            alert(alerts, "crashed", f"supervisor: {type(e).__name__}: {e}", key=key, seen=seen)
+            state["seen"] = sorted(seen)
             traceback.print_exc()
-        save_state(state_path, state)
+        try:
+            save_state(state_path, state)
+        except OSError as e:  # a full disk: report and keep the schedule; the state is rebuilt from the next run
+            alert(alerts, "crashed", f"supervisor state not saved: {e}")
         if status == "goal":
             print("goal reached: the lab stops", flush=True)
             return 0
@@ -270,6 +331,23 @@ def wait_until(t, nap=60.0):
     while (left := t - time.time()) > 0:
         beat()
         time.sleep(min(nap, left))
+
+
+def prospective_tick(spec, knowledge, alerts, seen, log):
+    """Lock and score the monthly prospective forecasts when due (ops/prospective.py). Only for the bike-share judge;
+    a failure is reported, never fatal."""
+    if spec.get("judge") != "judges.bikeshare":
+        return
+    try:
+        from ops import prospective
+
+        prospective.tick(spec.get("judge_config", {}).get("system", "chi"), REPO_ROOT, knowledge, spec.get("rig", "rig"),
+                         alert=lambda kind, message, key=None: alert(alerts, kind, message, key=key, seen=seen),
+                         log=log)  # fmt: skip
+    except Exception as e:
+        alert(alerts, "lock failed", f"prospective tick: {type(e).__name__}: {e}",
+              key=f"prospective:{dt.date.today()}:{type(e).__name__}", seen=seen)  # fmt: skip
+        log(traceback.format_exc())
 
 
 def save_state(path, state):

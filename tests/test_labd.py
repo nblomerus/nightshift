@@ -294,3 +294,79 @@ def test_restated_lessons_fold_into_one_and_idle_runs_are_counted(tmp_path):
             judge="j", data_key="k", design="B", decision=None, grade=None, stage="parked")  # fmt: skip
     r2 = kg.begin_run("r2", "j", started=2.0)
     assert kg.runs_without_tests() == 1 and kg.runs_without_tests(exclude=r2) == 0
+
+
+def test_stalled_slices_are_not_progress_and_raise_a_handler_stuck_alert(spec_dir, tmp_path):
+    base = pi({"picks": [{"key": "holidays", "rationale": "r"}], "lesson": "l"})
+
+    def critic_down(prompt, system=None, tier=None):
+        return "" if "critic@" in (system or "") else base(prompt, system, tier)  # never a usable review
+
+    state = {}
+    go(spec_dir, tmp_path, critic_down, state)
+    assert state["idle"] == 1  # a stalled slice is a fault, not progress
+    (stuck,) = [a for a in alerts(tmp_path) if a["kind"] == "handler stuck"]
+    assert "holidays" in stuck["message"]
+
+
+def test_refresh_warns_about_data_problems_that_persist(tmp_path, monkeypatch):
+    import os
+    import time as _time
+
+    from ops import bikeshare_ingest, gbfs_reduce
+
+    root = tmp_path / "bikeshare" / "chi"
+    root.mkdir(parents=True)
+    (root / "manifest.json").write_text(json.dumps({"months": {}}))
+    gbfs = tmp_path / "gbfs" / "chi"
+    gbfs.mkdir(parents=True)
+    old = gbfs / "2026-09-01.csv.gz"
+    old.write_bytes(b"")
+    os.utime(old, (_time.time() - 6 * 3600,) * 2)  # the collector stopped six hours ago
+    failed = {"202609": dict(error="BadZipFile: bad", first_seen="2026-10-05", attempts=3)}
+    monkeypatch.setattr(bikeshare_ingest, "ingest", lambda *a, **k: {"months": {}, "failed": failed})
+    monkeypatch.setattr(gbfs_reduce, "reduce_all", lambda *a, **k: (None, [(str(old), "EOFError: truncated")]))
+    monkeypatch.setattr("ops.events_ingest.due", lambda r: False)
+    warned = []
+    labd.refresh_data({"root": str(root)}, "chi", lambda *_: None, lambda kind, msg, key: warned.append(msg), {})
+    assert any("202609 has failed to ingest 3 times" in m for m in warned)
+    assert any("unreadable" in m for m in warned) and any("collector" in m for m in warned)
+
+    def down(*a, **k):
+        raise ConnectionError("no route to host")
+
+    monkeypatch.setattr(bikeshare_ingest, "ingest", down)
+    state, warned = {"ingest_errors": 22}, []
+    labd.refresh_data({"root": str(root)}, "chi", lambda *_: None, lambda kind, msg, key: warned.append(msg), state)
+    assert not any("cycles running" in m for m in warned)
+    labd.refresh_data({"root": str(root)}, "chi", lambda *_: None, lambda kind, msg, key: warned.append(msg), state)
+    assert any("failed 24 cycles running" in m for m in warned)  # a day of hourly failures reaches the owner
+
+
+def test_the_supervisor_runs_the_prospective_tick_and_reports_its_failures(spec_dir, tmp_path, monkeypatch):
+    from ops import prospective
+
+    monkeypatch.setattr(labd, "refresh_data", lambda *a, **k: None)  # offline
+    calls = []
+
+    def tick(system, repo_root, knowledge_path, rig, alert, log, now=None):
+        calls.append((system, rig))
+        alert("locked", "chi 202611: champion baseline", None)
+        raise RuntimeError("git exploded")
+
+    monkeypatch.setattr(prospective, "tick", tick)
+    status = labd.cycle(pi({"picks": [], "lesson": "l"}), spec_file(spec_dir, tmp_path), str(tmp_path / "kg.db"),
+                        str(tmp_path / "runs"), 1, {}, str(tmp_path / "alerts.jsonl"), refresh=True,
+                        log=lambda *_: None)  # fmt: skip
+    assert status == "running" and calls == [("chi", "bikeshare-lab")]
+    kinds = [a["kind"] for a in alerts(tmp_path)]
+    assert "locked" in kinds and "lock failed" in kinds  # the tick's own alert, then its crash: reported, not fatal
+
+
+def test_a_supervisor_without_its_llm_settings_says_so_once_a_day(tmp_path, monkeypatch):
+    for v in ("LLM_BASE_URL", "REASONING_MODEL"):
+        monkeypatch.delenv(v, raising=False)
+    args = ["--knowledge", str(tmp_path / "knowledge" / "lab.db"), "--rigspec", "rigs/bikeshare-lab.json"]
+    assert labd.main(args) == 2 and labd.main(args) == 2  # launchd restarts it every 5 minutes
+    crashed = [a for a in alerts(tmp_path / "knowledge") if a["kind"] == "crashed"]
+    assert len(crashed) == 1 and "LLM_BASE_URL" in crashed[0]["message"]

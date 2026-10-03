@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sqlite3
 import time
 from pathlib import Path
 
@@ -76,7 +77,9 @@ def tick(rig, ctx, transcript):
                     dict(seat=seat, task=task["kind"], slice=task["slice"], ok=True, s=round(time.time() - t0, 1))
                 )
             except Exception as e:
-                if isinstance(e, OSError):  # the endpoint or the disk is down: end the run; the supervisor reports it
+                # the endpoint or the disk is down (SQLite's disk-full / locked errors are not OSErrors): end the run;
+                # the supervisor reports it and retries next hour, instead of retrying into the same failure
+                if isinstance(e, (OSError, sqlite3.OperationalError)):
                     raise
                 error = str(e) if isinstance(e, (GuardError, ValueError, KeyError)) else f"{type(e).__name__}: {e}"
                 rig.complete(seat, task["id"], dict(error=error), state="parked")
@@ -293,14 +296,15 @@ def run(llm, root="runs/latest", max_ticks=40, n_campaigns=3, rigspec: str | Non
                 decisions=[(e["key"], e["decision"], e["grade"]) for e in new],
                 parked=parked,
                 stalled=stalled,
+                outcome="progressed" if new or parked else "stalled" if stalled else "converged",
                 promoted=promoted,
                 champion_after=ctx["champion_desc"],
             )
         )
         record_campaign(rig, ctx, k, champion_before, screen, new, parked + stalled, lessons_before, promoted)
         write_ledger(root, ctx)  # the dashboard reads this live
-        if not new and not parked:
-            break  # PI chose nothing worth testing: the loop converged
+        if not new and not parked and not stalled:
+            break  # PI chose nothing worth testing: the loop converged (a stalled campaign is not convergence)
     msgs = rig.inbox(rig.seat_for("pi"))
     if msgs:
         S.pi_read(rig, rig.seat_for("pi"), msgs, ctx)

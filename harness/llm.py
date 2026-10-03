@@ -52,11 +52,22 @@ def openai_compatible_llm(
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if not stream:
-                msg = json.load(resp)["choices"][0]["message"]
+                msg = json.loads(read_body(resp, time.monotonic() + deadline))["choices"][0]["message"]
                 return Reply(msg["content"], reasoning=msg.get("reasoning_content"))
             return Reply(*read_stream(resp, on_progress, deadline=time.monotonic() + deadline))
 
     return llm
+
+
+def read_body(resp, deadline, chunk=65536):
+    """The whole response body, read in chunks; past `deadline` (time.monotonic()) it raises TimeoutError, so a server
+    that trickles a non-streamed reply cannot hold the call open forever either."""
+    body = bytearray()
+    while block := resp.read(chunk):
+        if time.monotonic() > deadline:
+            raise TimeoutError("LLM call exceeded its deadline")
+        body += block
+    return bytes(body)
 
 
 def read_stream(lines, on_progress=None, deadline=None):
