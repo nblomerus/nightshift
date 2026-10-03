@@ -58,11 +58,18 @@ def reduce_day(path, names, every=None):
 
 def _unchanged(out_path, csv_text):
     """True if `out_path` already holds exactly `csv_text` (compared decompressed: gzip's own header mtime would
-    otherwise make two writes of identical content look different byte-for-byte)."""
+    otherwise make two writes of identical content look different byte-for-byte). A file that exists but won't
+    read back as gzip (e.g. truncated by a killed writer, since the write below isn't atomic) counts as changed
+    so it gets overwritten instead of wedging reduce_all the same way a bad day file would."""
     if not os.path.exists(out_path):
         return False
-    with gzip.open(out_path, "rt") as f:
-        return f.read() == csv_text
+    try:
+        with gzip.open(out_path, "rt") as f:
+            return f.read() == csv_text
+    except (OSError, EOFError):
+        # gzip.BadGzipFile (an OSError) for a header that isn't gzip at all, EOFError (not an
+        # OSError) for a truncated body - both are what a writer killed mid-write leaves behind.
+        return False
 
 
 def reduce_all(gbfs_root, out_path, today=None):

@@ -1,5 +1,6 @@
 """ROADMAP 8d: GBFS snapshots -> station-day censoring; the judge scores only uncensored days in masked months."""
 
+import gzip
 import json
 import os
 import time
@@ -36,6 +37,30 @@ def test_reduce_all_skips_a_corrupted_day_and_keeps_the_rest(tmp_path):
     table, skipped = gr.reduce_all(str(tmp_path), str(out))
     assert set(table["date"]) == {"2026-10-01", "2026-10-03"}  # the good days still build the table
     assert len(skipped) == 1 and "2026-10-02" in skipped[0][0] and skipped[0][1]
+
+
+def test_reduce_all_recovers_from_a_corrupted_output_file(tmp_path):
+    gbfs_day(str(tmp_path), "2026-10-01", {"a": "A St"})
+    out = tmp_path / "out" / "censor_day.csv.gz"
+    out.parent.mkdir()
+    out.write_bytes(b"not actually gzip")  # a previous reduce_all was killed mid-write of its own output
+    table, skipped = gr.reduce_all(str(tmp_path), str(out))
+    assert not skipped  # the bad file is the output, not a day file: nothing to skip
+    assert set(table["date"]) == {"2026-10-01"}  # and the table still gets built and written
+    with gzip.open(out, "rt") as f:
+        assert f.read() == table.to_csv(index=False)  # the corrupt file was overwritten, not left in place
+
+
+def test_reduce_all_recovers_from_a_truncated_output_file(tmp_path):
+    gbfs_day(str(tmp_path), "2026-10-01", {"a": "A St"})
+    out = tmp_path / "out" / "censor_day.csv.gz"
+    out.parent.mkdir()
+    with gzip.open(out, "wt") as f:
+        f.write("station,date,empty_minutes,coverage\n" * 100)  # a valid header, cut off mid-body
+    out.write_bytes(out.read_bytes()[: out.stat().st_size // 2])
+    table, skipped = gr.reduce_all(str(tmp_path), str(out))
+    assert not skipped
+    assert set(table["date"]) == {"2026-10-01"}
 
 
 def test_reduce_all_does_not_rewrite_an_identical_table(tmp_path):
