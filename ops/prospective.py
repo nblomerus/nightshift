@@ -12,9 +12,20 @@ backtest CI lies above zero but that the kernel did not support at the backtest 
 config (seat-written code included) and scored against the baseline, at alpha / (number of challengers in the lock).
 A challenger never changes the champion; its record is evidence for the lab and the owner.
 
-Commit and push that directory: the git history and the GitHub push time are the public timestamp. When month
-L+2 is published, `score` checks the lock (file hashes; created before the month began), scores both forecasts on
-the station-days the censoring mask keeps, and writes scores/<system>/<yyyymm>.json.
+The champion defaults to the knowledge graph's own record (`champion_config_from_knowledge`): the last promotion, or
+the judge's BASELINE if there has never been one. `--run`/`--champion` are explicit manual overrides for one-off use.
+
+`tick()` is the automatic path: called once an hour by ops/labd.py, it locks month L+2 as soon as its window opens,
+flags a window that closed with nothing locked, and scores every locked month whose target has since published.
+Locks and scores live in a dedicated git worktree of this repo, branch "prospective", at <repo_root>/../
+nightshift-prospective -- never the main checkout's working tree. A lock or score is committed there and pushed to
+origin, but only when the active `gh` account is this repo's owner (never switched automatically); otherwise the
+commit stays local and the owner is alerted to push it by hand. The git commit and the GitHub push time are the
+public timestamp; optionally stamp `lock.json` with OpenTimestamps too.
+
+When month L+2 is published, `score` checks the lock (file hashes; created before the month began), scores both
+forecasts on the station-days the censoring mask keeps, and writes scores/<system>/<yyyymm>.json. A judge change
+between lock and score is surfaced (`judge_changed`), not refused: a prospective month cannot be re-run.
 
     python -m ops.prospective lock  --system chi [--run runs/latest | --champion yoy_level,holidays] [--no-challengers]
     python -m ops.prospective score --system chi --month 202611
@@ -27,12 +38,13 @@ import datetime as dt
 import hashlib
 import json
 import os
+import re
 import subprocess
 
 import numpy as np
 import pandas as pd
 
-from agents.common import judge_digest
+from agents.common import describe_config, judge_digest
 from judges import bikeshare as bj
 from science import kernel as sk
 from state.knowledge import Knowledge, config_id
@@ -49,8 +61,22 @@ def sha256(path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
+def champion_config_from_knowledge(knowledge_path, rig):
+    """The lab's actual current champion: the knowledge graph's latest promotion (full config, so a seat-written
+    `code:` champion works too), or the judge's BASELINE if nothing has ever been promoted. This is the default
+    champion source for `lock` -- the same one true champion harness/daemon.py and ops/nightshift.py already trust,
+    unlike a single run's own ledger (see `champion_from_run`)."""
+    champ = Knowledge(knowledge_path, rig).current_champion()
+    return dict(champ[0]) if champ else dict(bj.BASELINE)
+
+
 def champion_from_run(run_root):
-    """The champion a lab run ended with: the baseline plus every promoted change, in order."""
+    """Manual override: the champion that ONE run's own ledger ended with (the baseline plus every change it itself
+    promoted, in order). Only correct when that run made every promotion itself -- `make_ctx` resets
+    `champion_history` to `[]` on every run, so a resumed run's ledger does not necessarily reflect the lab's actual
+    current champion. Only understands judge-MENU keys: a seat-written `code:` champion cannot be expressed this
+    way. Prefer the knowledge-graph default (`champion_config_from_knowledge`); keep this only to reproduce one
+    specific run's own result."""
     with open(os.path.join(run_root, "ledger.json")) as f:
         return [h["promoted"] for h in json.load(f)["champion_history"]]
 
@@ -111,6 +137,11 @@ def month_start_utc(month):
     return dt.datetime(int(month[:4]), int(month[4:]), 1, tzinfo=dt.UTC)
 
 
+def _parse_ts(iso):
+    """A manifest/lock timestamp (may end in Z) as an aware datetime."""
+    return dt.datetime.fromisoformat(iso.replace("Z", "+00:00"))
+
+
 def _git_head():
     try:
         return subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True).stdout.strip()
@@ -118,8 +149,106 @@ def _git_head():
         return ""
 
 
-def lock(system, out_root, champion_keys, now=None, challengers=()):
-    """Forecast month L+2 from everything published so far. Refuses if that month has already begun."""
+# ---------------------------------------------------------------------------- the prospective worktree (git/gh)
+def prospective_worktree_path(repo_root):
+    """Where lock/score write: a dedicated git worktree of this repo on branch "prospective", beside the main
+    checkout -- never the main checkout's own working tree or branch."""
+    return os.path.normpath(os.path.join(os.path.abspath(repo_root), os.pardir, "nightshift-prospective"))
+
+
+def _run_git(run, args, cwd):
+    run = run or subprocess.run
+    return run(["git", *args], cwd=cwd, capture_output=True, text=True)
+
+
+def ensure_prospective_worktree(repo_root, run=None):
+    """Create the prospective worktree on first use (idempotent: a no-op once it exists). From origin/prospective
+    if the remote already has that branch, else a new branch from the current HEAD. `run` is injectable (defaults
+    to `subprocess.run`) so tests can point "origin" at a temp bare repo."""
+    path = prospective_worktree_path(repo_root)
+    if os.path.isdir(path):
+        return path
+    remote = _run_git(run, ["ls-remote", "--heads", "origin", "prospective"], repo_root)
+    if (remote.stdout or "").strip():
+        _run_git(run, ["fetch", "origin", "prospective"], repo_root)
+        made = _run_git(run, ["worktree", "add", "-B", "prospective", path, "origin/prospective"], repo_root)
+    else:
+        made = _run_git(run, ["worktree", "add", "-b", "prospective", path], repo_root)
+    if made.returncode != 0:
+        raise LockError(f"git worktree add failed: {made.stderr or made.stdout}")
+    return path
+
+
+def repo_owner(repo_root, run=None):
+    """The GitHub login this repo's `origin` remote belongs to, parsed from its URL (SSH or HTTPS)."""
+    proc = _run_git(run, ["remote", "get-url", "origin"], repo_root)
+    m = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?$", (proc.stdout or "").strip())
+    return m.group(1) if m else None
+
+
+def gh_login(run=None):
+    """The GitHub login `gh` is currently authenticated as, or None if `gh` fails or is not logged in."""
+    run = run or subprocess.run
+    try:
+        proc = run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True)
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return (proc.stdout or "").strip() or None
+
+
+def commit_and_push(worktree, repo_root, rel_paths, message, run=None):
+    """Commit `rel_paths` (relative to `worktree`) and push branch "prospective" to origin -- but only when the
+    active `gh` account IS this repo's owner; never switch accounts to make it match. Returns `(pushed, reason)`;
+    `reason` is set only when not pushed. The commit itself always lands locally first."""
+    _run_git(run, ["add", *rel_paths], worktree)
+    committed = _run_git(run, ["commit", "-m", message], worktree)
+    if committed.returncode != 0 and "nothing to commit" not in (committed.stdout + committed.stderr):
+        raise LockError(f"git commit failed: {committed.stderr or committed.stdout}")
+    login, owner = gh_login(run), repo_owner(repo_root, run)
+    if not login or not owner or login != owner:
+        return False, f"gh is logged in as {login!r}, not the repo owner {owner!r}"
+    pushed = _run_git(run, ["push", "origin", "prospective"], worktree)
+    if pushed.returncode != 0:
+        return False, f"git push failed: {pushed.stderr or pushed.stdout}"
+    return True, None
+
+
+def sync(worktree, repo_root, message, run=None):
+    """Commit anything uncommitted under forecasts/ and scores/ in the prospective worktree, then push the branch if
+    origin lacks any of its prospective commits -- only as the repo owner (see commit_and_push). Called at the end of
+    every tick, so a commit or push that failed once (a git lock, the wrong gh account, no network) is retried next
+    hour instead of being lost. Returns `(pushed, reason)`; raises LockError only if a commit fails."""
+    dirs = [
+        d for d in ("forecasts", "scores") if os.path.isdir(os.path.join(worktree, d))
+    ]  # git add fails on a missing one
+    pending = _run_git(run, ["status", "--porcelain", "--", *dirs], worktree) if dirs else None
+    if pending is not None and (pending.stdout or "").strip():
+        _run_git(run, ["add", "--", *dirs], worktree)
+        committed = _run_git(run, ["commit", "-m", message], worktree)
+        if committed.returncode != 0 and "nothing to commit" not in (committed.stdout + committed.stderr):
+            raise LockError(f"git commit failed: {committed.stderr or committed.stdout}")
+    has_remote = _run_git(run, ["rev-parse", "--verify", "-q", "refs/remotes/origin/prospective"], worktree)
+    if has_remote.returncode == 0:
+        ahead = _run_git(run, ["rev-list", "--count", "origin/prospective..HEAD"], worktree).stdout.strip()
+        if ahead in ("", "0"):
+            return False, None  # nothing origin lacks
+    elif not _run_git(run, ["log", "-1", "--format=%H", "--", "forecasts", "scores"], worktree).stdout.strip():
+        return False, None  # no prospective commit yet: nothing worth publishing
+    login, owner = gh_login(run), repo_owner(repo_root, run)
+    if not login or not owner or login != owner:
+        return False, f"gh is logged in as {login!r}, not the repo owner {owner!r}"
+    pushed = _run_git(run, ["push", "origin", "prospective"], worktree)
+    if pushed.returncode != 0:
+        return False, f"git push failed: {pushed.stderr or pushed.stdout}"
+    return True, None
+
+
+# ---------------------------------------------------------------------------- lock / score
+def lock(system, out_root, champion, now=None, challengers=()):
+    """Forecast month L+2 from everything published so far, for `champion` (a full config dict -- see
+    `champion_config_from_knowledge`) and the baseline. Refuses if that month has already begun."""
     now = now or dt.datetime.now(dt.UTC)
     panel = bj.load_panel()
     latest = max(panel["published"])
@@ -130,7 +259,7 @@ def lock(system, out_root, champion_keys, now=None, challengers=()):
     if os.path.exists(os.path.join(out, "lock.json")):
         raise LockError(f"{out} is already locked; a lock is never replaced")
     os.makedirs(out, exist_ok=True)
-    arms = dict(champion=config_for(champion_keys), baseline=dict(bj.BASELINE))
+    arms = dict(champion=dict(champion), baseline=dict(bj.BASELINE))
     for c in challengers:
         arms[f"challenger-{c['name']}"] = c["config"]
     files = {}
@@ -147,7 +276,7 @@ def lock(system, out_root, champion_keys, now=None, challengers=()):
         data_through=latest,
         as_of=panel["published"][latest],
         created_at=now.isoformat(),
-        champion=dict(keys=list(champion_keys), config=arms["champion"]),
+        champion=dict(config=arms["champion"]),
         baseline=dict(config=arms["baseline"]),
         challengers={c["name"]: dict(config=c["config"], test=c["test"], backtest=c["backtest"]) for c in challengers},
         alpha_challengers=ALPHA / max(1, len(challengers)),
@@ -162,7 +291,8 @@ def lock(system, out_root, champion_keys, now=None, challengers=()):
 
 def station_errors(system, month, out_root):
     """Check a lock and return (lock record, per-station abs errors of every arm (e_<arm>) and actuals, censor rate,
-    masked) over the station-days the censoring mask keeps."""
+    masked, station-days kept, judge_changed) over the station-days the censoring mask keeps. `judge_changed` is
+    True when the judge's current digest no longer matches the one stamped at lock time."""
     out = os.path.join(out_root, system, month)
     with open(os.path.join(out, "lock.json")) as f:
         record = json.load(f)
@@ -174,6 +304,7 @@ def station_errors(system, month, out_root):
     panel = bj.load_panel()
     if month not in panel["published"]:
         raise LockError(f"{month} is not published yet")
+    judge_changed = record.get("judge_digest") != judge_digest(bj)
     days = {d.isoformat(): i for i, d in enumerate(panel["days"]) if d.strftime("%Y%m") == month}
     s_idx = {s: i for i, s in enumerate(panel["stations"])}
     use_mask = bj.masked(panel, month)
@@ -192,12 +323,13 @@ def station_errors(system, month, out_root):
     kept = fc[fc["keep"]]
     by_station = kept.assign(**{f"e_{arm}": (kept[f"f_{arm}"] - kept["y"]).abs() for arm in arms})
     g = by_station.groupby("station")[[f"e_{arm}" for arm in arms] + ["y"]].sum()
-    return record, g, float(1 - keep.mean()), bool(use_mask), int(len(kept))
+    return record, g, float(1 - keep.mean()), bool(use_mask), int(len(kept)), judge_changed
 
 
 def score(system, month, out_root, scores_root, sesoi=0.02, n_boot=2000):
-    """Score a locked month once the operator has published it, then re-pool every scored month."""
-    record, g, censor_rate, use_mask, n_kept = station_errors(system, month, out_root)
+    """Score a locked month once the operator has published it, then re-pool every scored month. A judge change
+    since lock does not block scoring (a prospective month cannot be re-run); it is surfaced as `judge_changed`."""
+    record, g, censor_rate, use_mask, n_kept, judge_changed = station_errors(system, month, out_root)
     est = sk.paired_effect(
         g[["e_champion"]].to_numpy(), g[["e_baseline"]].to_numpy(), ALPHA, n_boot, np.random.default_rng(0)
     )
@@ -218,6 +350,7 @@ def score(system, month, out_root, scores_root, sesoi=0.02, n_boot=2000):
         censor_rate=censor_rate,
         station_days=n_kept,
         stations=int(len(g)),
+        judge_changed=judge_changed,
         wape_champion=float(g["e_champion"].sum() / g["y"].sum()),
         wape_baseline=float(g["e_baseline"].sum() / g["y"].sum()),
         relative_wape_reduction=est,
@@ -259,13 +392,110 @@ def cumulative(system, out_root, scores_root, sesoi, n_boot=2000):
     return out
 
 
+# ---------------------------------------------------------------------------- automatic supervisor entry point
+FIRST_LOCK_MONTH = "202611"  # the first month the automated lock could make; earlier months were never lockable here
+
+
+def tick(system, repo_root, knowledge_path, rig, alert, log, now=None, first_month=FIRST_LOCK_MONTH):
+    """One supervisor cycle (ops/labd.py calls this once an hour, inside its own try/except): lock month L+2 once
+    its window opens, flag a window that closed with nothing locked, and score every locked month whose target has
+    since published. `alert(kind, message, key=None)` records an owner alert (deduped by key); `log(str)` logs.
+    Idempotent and cheap once there is nothing new to do; never raises -- a failure is an alert, not a crash."""
+    now = now or dt.datetime.now(dt.UTC)
+    out = dict(locked=None, scored=[], missed=[])
+    try:
+        worktree = ensure_prospective_worktree(repo_root)
+    except LockError as e:
+        alert("not pushed", f"prospective worktree unavailable: {e}", key=f"worktree:{system}")
+        return out
+    forecasts_root, scores_root = os.path.join(worktree, "forecasts"), os.path.join(worktree, "scores")
+    try:
+        with open(os.path.join(repo_root, "rigs", f"{rig}.json")) as f:
+            sesoi = json.load(f)["decision_standards"]["prospective"]["sesoi"]
+    except (OSError, KeyError, ValueError) as e:
+        log(f"prospective: cannot read rigs/{rig}.json: {e}")
+        return out
+    try:
+        manifest_published = bj.load_panel()["published"]
+    except (OSError, ValueError) as e:
+        log(f"prospective: no published data yet: {e}")
+        return out
+    if not manifest_published:
+        return out
+
+    target = bj.month_add(max(manifest_published), 2)
+    sys_dir = os.path.join(forecasts_root, system)
+    locked = {
+        m
+        for m in (os.listdir(sys_dir) if os.path.isdir(sys_dir) else [])
+        if os.path.exists(os.path.join(sys_dir, m, "lock.json"))
+    }
+
+    if target not in locked and now < month_start_utc(target):
+        try:
+            champion = champion_config_from_knowledge(knowledge_path, rig)
+            leads = (
+                challengers(knowledge_path, rig, os.path.join(repo_root, "runs"), champion)
+                if os.path.exists(knowledge_path)
+                else []
+            )
+            lock(system, forecasts_root, champion, now=now, challengers=leads)
+            alert("locked", f"{system} {target}: champion {describe_config(bj, champion)}, {len(leads)} challenger(s)")
+            log(f"prospective: locked {system} {target}")
+            out["locked"] = target
+            locked.add(target)
+        except LockError as e:
+            alert("lock failed", f"lock {system} {target} failed: {e}", key=f"lock-failed:{system}:{target}")
+
+    for published_month, published_at in manifest_published.items():
+        m = bj.month_add(published_month, 2)
+        if m < first_month or m in locked or now < month_start_utc(m):
+            continue
+        if _parse_ts(published_at) < month_start_utc(m):
+            alert("missed lock", f"{system} {m}: window closed with no lock on file", key=f"missed-lock:{system}:{m}")
+            out["missed"].append(m)
+
+    for m in sorted(locked):
+        if m not in manifest_published or os.path.exists(os.path.join(scores_root, system, f"{m}.json")):
+            continue
+        try:
+            r = score(system, m, forecasts_root, scores_root, sesoi=sesoi)
+        except LockError as e:
+            alert("score failed", f"score {system} {m} failed: {e}", key=f"score-failed:{system}:{m}")
+            continue
+        msg = (f"{system} {m}: champion WAPE {r['wape_champion']:.3f} vs baseline {r['wape_baseline']:.3f}, "
+               f"cumulative {r['cumulative']['decision']}")  # fmt: skip
+        if r["judge_changed"]:
+            msg += " (judge changed since lock)"
+        alert("scored", msg)
+        log(f"prospective: scored {system} {m}")
+        out["scored"].append(m)
+    done = [f"lock {out['locked']}"] if out["locked"] else []
+    done += [f"score {m}" for m in out["scored"]]
+    try:  # commit and publish whatever is pending, this tick's work or an earlier tick's that failed to land
+        pushed, reason = sync(worktree, repo_root, f"Prospective {system}: " + (", ".join(done) or "pending files"))
+        if reason:
+            alert("not pushed", f"prospective {system}: {reason}", key=f"not-pushed:{system}:{dt.date.today()}")
+        out["pushed"] = pushed
+    except Exception as e:  # never raise out of tick: the files stay, and the next tick retries the commit
+        alert("not pushed", f"prospective {system}: commit failed, will retry: {e}",
+              key=f"commit:{system}:{dt.date.today()}")  # fmt: skip
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m ops.prospective", description=__doc__.split("\n\n")[0])
     ap.add_argument("cmd", choices=["lock", "score"])
     ap.add_argument("--system", default="chi")
     ap.add_argument("--data", default=None, help="default: data/bikeshare/<system>")
-    ap.add_argument("--run", default=None, help="take the champion from this lab run's ledger.json")
-    ap.add_argument("--champion", default="", help="comma-separated menu keys (overrides --run)")
+    ap.add_argument("--run", default=None,
+                     help="override: the champion that run's OWN ledger.json promoted (menu-key changes only; "
+                          "a resumed run's ledger is NOT necessarily the lab's actual current champion -- see "
+                          "--champion and the knowledge-graph default this falls back to)")  # fmt: skip
+    ap.add_argument("--champion", default="",
+                     help="override: comma-separated judge-menu keys for a manual champion config (overrides "
+                          "--run; default: the knowledge graph's current champion, or BASELINE if never "
+                          "promoted)")  # fmt: skip
     ap.add_argument("--month", default=None)
     ap.add_argument("--forecasts", default="forecasts")
     ap.add_argument("--scores", default="scores")
@@ -275,30 +505,35 @@ def main(argv=None):
     ap.add_argument("--no-challengers", action="store_true")
     a = ap.parse_args(argv)
     bj.configure(dict(root=a.data or os.path.join("data", "bikeshare", a.system)))
+    with open(a.rigspec) as f:
+        spec = json.load(f)
+    rig = spec.get("rig", "rig")
+    kg = a.knowledge or os.path.join("knowledge", f"{rig}.db")
     if a.cmd == "lock":
-        keys = [k for k in a.champion.split(",") if k] if a.champion else []
-        if not a.champion and a.run:
-            keys = champion_from_run(a.run)
+        if a.champion:
+            champion = config_for([k for k in a.champion.split(",") if k])
+        elif a.run:
+            champion = config_for(champion_from_run(a.run))
+        else:
+            champion = champion_config_from_knowledge(kg, rig)
         leads = []
-        if not a.no_challengers:
-            with open(a.rigspec) as f:
-                rig = json.load(f).get("rig", "rig")
-            kg = a.knowledge or os.path.join("knowledge", f"{rig}.db")
-            if os.path.exists(kg):
-                leads = challengers(kg, rig, a.runs_dir, config_for(keys))
-        rec = lock(a.system, a.forecasts, keys, challengers=leads)
+        if not a.no_challengers and os.path.exists(kg):
+            leads = challengers(kg, rig, a.runs_dir, champion)
+        rec = lock(a.system, a.forecasts, champion, challengers=leads)
         path = os.path.join(a.forecasts, a.system, rec["target_month"])
-        print(f"locked {path} (champion: {keys or 'baseline'}; challengers: {[c['name'] for c in leads] or 'none'})")
+        print(f"locked {path} (champion: {describe_config(bj, champion)}; "
+              f"challengers: {[c['name'] for c in leads] or 'none'})")  # fmt: skip
         print("Publish the timestamp now:")
         print(f"  git add {path} && git commit -m 'Lock {a.system} forecasts for {rec['target_month']}' && git push")
     else:
-        with open(a.rigspec) as f:
-            sesoi = json.load(f)["decision_standards"]["prospective"]["sesoi"]
+        sesoi = spec["decision_standards"]["prospective"]["sesoi"]
         r = score(a.system, a.month, a.forecasts, a.scores, sesoi=sesoi)
         e = r["relative_wape_reduction"]
         wapes = f"champion WAPE {r['wape_champion']:.3f} vs baseline {r['wape_baseline']:.3f}"
         ci = f"reduction {e['point']:+.1%} [{e['lo']:+.1%}, {e['hi']:+.1%}]"
         print(f"{a.month}: {wapes}; {ci}; censor rate {r['censor_rate']:.0%}")
+        if r["judge_changed"]:
+            print("WARNING: the judge changed between lock and score; scored anyway (see judge_changed)")
         c = r["cumulative"]
         n, point = len(c["months"]), c["estimate"]["point"]
         print(f"all {n} scored months: {c['decision']} at SESOI {c['sesoi']:.0%} ({point:+.1%})")

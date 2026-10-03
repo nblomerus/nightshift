@@ -12,6 +12,7 @@ import glob
 import json
 import os
 
+from ops.prospective import prospective_worktree_path
 from state.knowledge import Knowledge, config_id
 
 
@@ -25,6 +26,28 @@ def _read(path, default=None):
 
 def _day(ts):
     return dt.datetime.fromtimestamp(ts).date().isoformat() if ts else None
+
+
+def _prospective_decisions(repo_root):
+    """The latest pooled prospective decision (ROADMAP 8e) for every system that has one, read from
+    scores/<system>/cumulative.json in the dedicated prospective worktree. Empty if that worktree, or a system's
+    cumulative score, does not exist yet."""
+    worktree = prospective_worktree_path(repo_root)
+    out = []
+    for path in sorted(glob.glob(os.path.join(worktree, "scores", "*", "cumulative.json"))):
+        c = _read(path)
+        if not c:
+            continue
+        out.append(
+            dict(
+                system=os.path.basename(os.path.dirname(path)),
+                months=len(c["months"]),
+                point=c["estimate"]["point"],
+                sesoi=c["sesoi"],
+                decision=c["decision"],
+            )
+        )
+    return out
 
 
 def build_progress(repo_root, rig):
@@ -95,6 +118,7 @@ def build_progress(repo_root, rig):
             next_run=(last_start + every) if last_start and every else None,
             status=state.get("status"),
         ),
+        prospective=_prospective_decisions(repo_root),
         lessons=kg.lessons(10),
         requests=[
             r[0] for r in kg.db.execute("SELECT label FROM nodes WHERE type='request' ORDER BY created DESC LIMIT 5")
@@ -125,4 +149,7 @@ def digest_text(p, day=None):
         if g.get("goal") is not None
         else "Goal: not checked yet",
     ]
+    if p.get("prospective"):
+        parts = [f"{d['system']}: {d['decision']} over {d['months']} mo ({d['point']:+.1%})" for d in p["prospective"]]
+        lines.append("Prospective: " + "; ".join(parts))
     return "\n".join(lines)
