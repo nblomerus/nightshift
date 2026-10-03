@@ -12,7 +12,7 @@ from pathlib import Path
 
 import agents as S
 from harness.llm import recording_llm
-from state.knowledge import Knowledge
+from state.knowledge import Knowledge, standard_id
 from state.rig import GuardError, Rig
 
 TASK_ATTEMPTS = 3  # an LLM seat that returns no usable answer gets its task again, up to this many times in all
@@ -184,6 +184,7 @@ def record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_b
     kg, run, J = ctx.get("knowledge"), ctx.get("run_id"), ctx["judge"]
     if kg is None:
         return
+    std = rig.spec["decision_standards"]
     kg.screen(run, k, champion_before, screen)
     for e in new:
         pre = ctx["locked"][e["slice"]]
@@ -193,7 +194,8 @@ def record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_b
                 data_key=ctx["primary_seed"][e["slice"]], design=pre.design["name"],
                 decision=dict(decision=e["decision"], point=e["point"], lo=e["lo"], hi=e["hi"]), grade=e["grade"],
                 stage="written", prereg=pre.digest,
-                idea_fp=ctx["ideas"].get(e["key"], {}).get("idea_fp", ""))  # fmt: skip
+                idea_fp=ctx["ideas"].get(e["key"], {}).get("idea_fp", ""),
+                standard=standard_id(pre.sesoi, pre.min_effect))  # fmt: skip
     for sid in parked:
         draft = rig.read_proof(sid, "prereg_draft.json") or {}
         key = draft.get("treatment_key") or sid.split("-", 2)[-1]
@@ -238,6 +240,9 @@ def record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_b
             stage=rig.stage(sid),
             reason=reason,
             idea_fp=ctx["ideas"].get(key, {}).get("idea_fp", ""),
+            standard=standard_id(
+                draft.get("sesoi", std["sesoi"]), draft.get("min_effect", std.get("promote_min_effect"))
+            ),
         )
     for text in ctx["lessons"][lessons_before:]:
         kg.lesson(run, k, text)

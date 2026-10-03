@@ -91,8 +91,8 @@ def test_a_replication_needs_the_replicators_own_code_to_pass(spec_path, tmp_pat
 
     real = st.sk.decide
 
-    def primary_supported(est, sesoi):  # only the primary analysis; controls and the replication decide for real
-        return "supported" if inspect.stack()[1].function == "statistician_analyse" else real(est, sesoi)
+    def primary_supported(est, sesoi, min_effect=None):  # only the primary analysis; controls and replication are real
+        return "supported" if inspect.stack()[1].function == "statistician_analyse" else real(est, sesoi, min_effect)
 
     monkeypatch.setattr(st.sk, "decide", primary_supported)
     rig, ctx, _ = run(llm(replicator=[NOISY]), root=str(tmp_path / "r"), n_campaigns=1, rigspec=spec_path)

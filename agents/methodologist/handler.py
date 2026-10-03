@@ -63,6 +63,7 @@ def methodologist_draft(rig, seat, task, ctx):
     pre["statement"] = statement_for(ctx, key, std, ctx["alpha_per_test"])
     pre["design"] = pre["design"] if pre["design"] in J.DESIGNS else "A"
     pre["sesoi"], pre["target_effect"], pre["alpha"] = std["sesoi"], std["target_effect"], ctx["alpha_per_test"]
+    pre["min_effect"] = std.get("promote_min_effect")  # None: the SESOI is also the promotion bar (the original rule)
     pre["treatment_key"], pre["revision"] = key, (prev or {}).get("revision", -1) + 1
     rig.proof(sid, "prereg_draft.json", pre)
     fields_ok = all(pre.get(k) not in (None, "") for k in PREREG_KEYS)

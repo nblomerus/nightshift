@@ -46,11 +46,17 @@ class Preregistration:
     design: dict = dc.field(default_factory=dict)  # origins, data slice, seeds — fixed up front
     kills_if: str = ""  # what result would make the PI drop the direction
     judge_digest: str = ""  # SHA-256 of the frozen judge's source at lock; results must be produced by it
+    # Smallest improvement that is "supported" (promotes after replication); None = the SESOI (the original rule).
+    # A rig that seeks any reliable improvement sets 0: supported then means the CI lies above zero.
+    min_effect: float | None = None
     locked_at: float = 0.0
     digest: str = ""
 
     def _body(self):
-        return {k: v for k, v in dc.asdict(self).items() if k not in ("locked_at", "digest")}
+        body = {k: v for k, v in dc.asdict(self).items() if k not in ("locked_at", "digest")}
+        if body["min_effect"] is None:  # absent from every prereg locked before the field existed: digests unchanged
+            del body["min_effect"]
+        return body
 
     def lock(self) -> Preregistration:
         d = hashlib.sha256(json.dumps(self._body(), sort_keys=True, default=str).encode()).hexdigest()
@@ -81,8 +87,10 @@ def paired_effect(err_t, err_c, alpha: float, n_boot: int, rng, two_way: bool = 
     return dict(point=float(point), lo=float(lo), hi=float(hi))
 
 
-def decide(est: dict, sesoi: float) -> Decision:
-    if est["lo"] > 0 and est["point"] >= sesoi:
+def decide(est: dict, sesoi: float, min_effect: float | None = None) -> Decision:
+    """supported: the CI lies above zero and the point is at least `min_effect` (the SESOI when None); harmful: the CI
+    lies below zero; no_effect: the CI lies within +-SESOI; otherwise inconclusive."""
+    if est["lo"] > 0 and est["point"] >= (sesoi if min_effect is None else min_effect):
         return "supported"
     if est["hi"] < 0:
         return "harmful"
@@ -121,7 +129,7 @@ def run_test(prereg: Preregistration, run_arm: Callable[[dict], dict], rng, ledg
     t, c = run_arm(prereg.treatment), run_arm(prereg.comparator)
     two_way = prereg.design.get("bootstrap", "two_way") == "two_way"
     est = paired_effect(t["abs_err"], c["abs_err"], alpha, prereg.n_boot, rng, two_way=two_way)
-    dec = decide(est, prereg.sesoi)
+    dec = decide(est, prereg.sesoi, prereg.min_effect)
     if ledger is not None:
         ledger.record(prereg, alpha, est, dec)
     return dict(decision=dec, alpha=alpha, **est)

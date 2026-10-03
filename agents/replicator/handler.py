@@ -41,7 +41,7 @@ def replicator_replicate(rig, seat, task, ctx):
         d = pre.design["name"]
         t, c = J.evaluate(genome, d, seed, ctx["cache"]), J.evaluate(pre.comparator, d, seed, ctx["cache"])
         est = sk.paired_effect(t["abs_err"], c["abs_err"], pre.alpha, pre.n_boot, rng)
-        dec = sk.decide(est, pre.sesoi)
+        dec = sk.decide(est, pre.sesoi, pre.min_effect)
     rep = dict(
         reimplemented_as=key,
         same_treatment=same_treatment,
@@ -76,7 +76,7 @@ def replicate_code(rig, seat, task, ctx, pre, J, judge, key):
         d = pre.design["name"]
         t, c = J.evaluate(genome, d, seed, ctx["cache"]), J.evaluate(pre.comparator, d, seed, ctx["cache"])
         est = sk.paired_effect(t["abs_err"], c["abs_err"], pre.alpha, pre.n_boot, np.random.default_rng(2))
-        dec = sk.decide(est, pre.sesoi)
+        dec = sk.decide(est, pre.sesoi, pre.min_effect)
     rep = dict(
         reimplemented_as="independent code",
         code_sha=hashlib.sha256((source or "").encode()).hexdigest(),

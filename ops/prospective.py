@@ -97,12 +97,14 @@ ALPHA = 0.05
 
 def challengers(knowledge_path, rig, runs_dir, champion, limit=MAX_CHALLENGERS):
     """The backtest leads against `champion`: decided tests with the CI's lower bound above zero, best point first,
-    one per treatment. Each config is read back from its run's locked prereg and must match the graph's record."""
+    one per treatment, whatever their label (a supported result that did not replicate is still a lead; one that
+    replicated became the champion, so it is no longer tested against this one). Each config is read back from its
+    run's locked prereg and must match the graph's record."""
     kg = Knowledge(knowledge_path, rig)
     best = {}
     for t in kg.tests(comparator=champion):
         d = t.get("decision") or {}
-        if d.get("lo") is None or d["lo"] <= 0 or d.get("decision") == "supported":
+        if d.get("lo") is None or d["lo"] <= 0:
             continue
         if t["treatment"] in best and best[t["treatment"]]["decision"]["point"] >= d["point"]:
             continue

@@ -242,6 +242,12 @@ evidence the lab and the owner can act on. `--no-challengers` locks the champion
   about 11 monthly origins per role cannot resolve less. Public claims rest on the monthly prospective scores,
   pooled over every scored month (two-way bootstrap over stations × months) and decided by the kernel at SESOI
   2 % (`decision_standards.prospective`). No scored month can be left out of the pool.
+- **Seek any reliable improvement (owner, 2026-10-03).** The lab must not be stopped by an arbitrary size bar. A
+  backtested change is *supported*, and promotes once an independent replication on disjoint months agrees, when its
+  CI lies above zero (`promote_min_effect` 0); the SESOI, now 5 %, only bounds *no effect* and sizes power. Real
+  4–6 % gains with tight intervals were being labelled `no_effect` at 10 % and could never stack. Tests decided under
+  the old standards are offered again (the knowledge graph records each test's standards). The goal (15 %) is a
+  milestone the owner is told about, not a stop. Overfitting is guarded by replication and the prospective months.
 - The collectors run on this Mac under launchd. A Mac that sleeps produces `unknown` days.
 - **First screen on real exploration months, seasonal baseline:** `station_dow` +0.5 %, `holidays` +0.4 %,
   `neighbour_pool` +0.1 %, `system_trend` −2.6 %, `tweedie_loss` −10.6 %. None is near the 10 % backtest SESOI,

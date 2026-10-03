@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from agents.common import ask_json, change_desc, evaluation_key, persona
-from state.knowledge import idea_fingerprint, settled
+from state.knowledge import idea_fingerprint, settled, standard_id
 
 
 # ---------------------------------------------------------------------------- PI
@@ -14,6 +14,8 @@ def pi_plan(rig, seat, task, ctx):
     lessons, critic suggestions. Re-testing an inconclusive change is allowed only as a NEW prereg
     (fresh data, typically a larger design); earlier data are never pooled post hoc."""
     J, kg = ctx["judge"], ctx.get("knowledge")
+    std = rig.spec["decision_standards"]
+    ctx["standard"] = standard_id(std["sesoi"], std.get("promote_min_effect"))  # what settles a change now
     menu = {
         k: v
         for k, v in J.MENU.items()
@@ -25,7 +27,9 @@ def pi_plan(rig, seat, task, ctx):
     if kg is not None:
         digest, data_key = evaluation_key(J), J.data_keys("primary", ctx["campaign"], 0)[0]
         unavailable = [
-            k for k, v in menu.items() if kg.is_repeat(dict(ctx["champion"], **v[1]), ctx["champion"], digest, data_key)
+            k
+            for k, v in menu.items()
+            if kg.is_repeat(dict(ctx["champion"], **v[1]), ctx["champion"], digest, data_key, ctx["standard"])
         ]
         menu = {k: v for k, v in menu.items() if k not in unavailable}
     ev = (
@@ -172,7 +176,13 @@ def take_picks(out, menu, new_ideas, kg, ctx):
 
     def find_prior(k):
         """The earlier attempts at this code idea against this champion, if they settle it (else None)."""
-        mine = [t for t in tests if t["change"] == k and t["champion"] == champion]
+        mine = [
+            t
+            for t in tests
+            if t["change"] == k
+            and t["champion"] == champion
+            and t.get("standard") == ctx.get("standard", t.get("standard"))
+        ]
         return mine if mine and settled(mine) else None
 
     for p in out.get("picks", []) or []:
