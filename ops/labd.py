@@ -1,4 +1,4 @@
-"""The lab, run continuously: keep testing ideas until the goal is reached, and ping the owner when it needs them.
+"""The lab, run continuously: keep seeking improvement, and ping the owner when it needs them.
 
 Each cycle:
   1. refresh the data (new trip months, the censoring table from collected snapshots, a monthly street-events
@@ -8,7 +8,8 @@ Each cycle:
   4. ping the owner, once per event, when: the goal is reached (a milestone; the lab carries on unless the rigspec's goal
      says "stop"), the PI asks the owner for something the lab
      cannot get itself, the lab stalls (runs in a row that test nothing), or a run crashes (once a day per error);
-  5. wait for the next slot by the wall clock, so a Mac that slept starts the next run as soon as it wakes.
+  5. wait for the next slot by the wall clock, so a Mac that slept starts the next run as soon as it wakes; a run that
+     the lid closing cut short (its connection died in the sleep) is not a crash: it starts again a minute after waking.
 
 Pings: a macOS notification and a line in knowledge/alerts.jsonl (also printed). The owner answers the PI with
 `make reply MSG="..."`; the reply is in the PI's brief from its next plan. The supervisor never decides
@@ -150,11 +151,17 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
 
         refresh_data(spec.get("judge_config", {}), spec.get("judge_config", {}).get("system", "chi"), log, warn, state)
     name = "auto-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    wall0, awake0 = time.time(), time.monotonic()
     try:
         _, ctx, _ = run(
             llm, root=os.path.join(runs_dir, name), n_campaigns=campaigns, rigspec=spec_path, knowledge=knowledge
         )
     except Exception as e:
+        slept = (time.time() - wall0) - (time.monotonic() - awake0)  # monotonic time stops while the Mac sleeps
+        if slept > SLEEP_GAP_S:  # the lid closed mid-run and the connection died with it: not a fault, start again
+            log(f"run {name} interrupted by {slept / 60:.0f} min of sleep ({type(e).__name__}: {e}); restarting")
+            state["seen"] = sorted(seen)
+            return "interrupted"
         alert(
             alerts,
             "crashed",
@@ -230,6 +237,7 @@ def after_run(ctx, spec, name, knowledge, state, alerts, seen, max_idle, log):
     return status
 
 
+SLEEP_GAP_S = 300  # a run that failed after the Mac slept this long during it was interrupted, not broken
 DATA_PING_EVERY = 24 * 3600  # seconds between "needs you" pings while a request is open with the owner
 DIGEST_HOUR = 21  # local time: one digest a day, after this hour
 
@@ -324,7 +332,8 @@ def main(argv=None):
             return 0
         if a.once:
             return 0
-        wait_until(max(t0 + a.every, time.time() + 60.0))
+        # a run cut short by sleep starts again a minute after waking; otherwise keep the hourly slot
+        wait_until(time.time() + 60.0 if status == "interrupted" else max(t0 + a.every, time.time() + 60.0))
 
 
 def wait_until(t, nap=60.0):

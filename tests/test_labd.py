@@ -403,3 +403,27 @@ def test_a_crash_whose_message_changes_every_cycle_still_pings_once_a_day(spec_d
     for _ in range(3):
         assert go(spec_dir, tmp_path, broken, state) == "crashed"
     assert [a["kind"] for a in alerts(tmp_path)] == ["crashed"]
+
+
+def test_a_run_cut_short_by_sleep_restarts_without_an_alert(spec_dir, tmp_path, monkeypatch):
+    import time as real_time
+    import types
+
+    clock = dict(wall=real_time.time(), awake=real_time.monotonic())
+    fake = types.SimpleNamespace(time=lambda: clock["wall"], monotonic=lambda: clock["awake"], sleep=lambda s: None)
+    monkeypatch.setattr(labd, "time", fake)
+
+    def lid_closed(prompt, system=None, tier=None):
+        clock["wall"] += 40 * 60  # 40 minutes pass on the wall clock, none of them awake: the Mac slept
+        raise TimeoutError("The read operation timed out")  # the connection died in the sleep
+
+    state = {}
+    assert go(spec_dir, tmp_path, lid_closed, state) == "interrupted"
+    assert alerts(tmp_path) == [] and state.get("idle", 0) == 0  # not a crash, not idleness
+
+    def down(prompt, system=None, tier=None):
+        clock["awake"] += 60  # awake the whole time: a real outage
+        raise TimeoutError("The read operation timed out")
+
+    assert go(spec_dir, tmp_path, down, state) == "crashed"
+    assert [a["kind"] for a in alerts(tmp_path)] == ["crashed"]
