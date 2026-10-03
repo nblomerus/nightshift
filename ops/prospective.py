@@ -168,12 +168,21 @@ def ensure_prospective_worktree(repo_root, run=None):
     path = prospective_worktree_path(repo_root)
     if os.path.isdir(path):
         return path
-    remote = _run_git(run, ["ls-remote", "--heads", "origin", "prospective"], repo_root)
-    if (remote.stdout or "").strip():
-        _run_git(run, ["fetch", "origin", "prospective"], repo_root)
-        made = _run_git(run, ["worktree", "add", "-B", "prospective", path, "origin/prospective"], repo_root)
+    _run_git(run, ["worktree", "prune"], repo_root)  # a worktree dir removed by hand leaves a stale entry behind
+    local = _run_git(run, ["rev-parse", "--verify", "-q", "refs/heads/prospective"], repo_root).returncode == 0
+    if local:  # the branch survived its worktree: reuse it, never fork a second history
+        made = _run_git(run, ["worktree", "add", path, "prospective"], repo_root)
     else:
-        made = _run_git(run, ["worktree", "add", "-b", "prospective", path], repo_root)
+        remote = _run_git(run, ["ls-remote", "--heads", "origin", "prospective"], repo_root)
+        if remote.returncode != 0:  # unknown is not "absent": a new branch here would fork the published history
+            raise LockError(f"cannot reach origin to look for the prospective branch: {remote.stderr.strip()}")
+        if (remote.stdout or "").strip():
+            fetched = _run_git(run, ["fetch", "origin", "prospective"], repo_root)
+            if fetched.returncode != 0:
+                raise LockError(f"git fetch origin prospective failed: {fetched.stderr.strip()}")
+            made = _run_git(run, ["worktree", "add", "-B", "prospective", path, "origin/prospective"], repo_root)
+        else:
+            made = _run_git(run, ["worktree", "add", "-b", "prospective", path], repo_root)
     if made.returncode != 0:
         raise LockError(f"git worktree add failed: {made.stderr or made.stdout}")
     return path
@@ -406,7 +415,7 @@ def tick(system, repo_root, knowledge_path, rig, alert, log, now=None, first_mon
     try:
         worktree = ensure_prospective_worktree(repo_root)
     except LockError as e:
-        alert("not pushed", f"prospective worktree unavailable: {e}", key=f"worktree:{system}")
+        alert("not pushed", f"prospective worktree unavailable: {e}", key=f"worktree:{system}:{dt.date.today()}")
         return out
     forecasts_root, scores_root = os.path.join(worktree, "forecasts"), os.path.join(worktree, "scores")
     try:
@@ -445,7 +454,11 @@ def tick(system, repo_root, knowledge_path, rig, alert, log, now=None, first_mon
             out["locked"] = target
             locked.add(target)
         except LockError as e:
-            alert("lock failed", f"lock {system} {target} failed: {e}", key=f"lock-failed:{system}:{target}")
+            alert(
+                "lock failed",
+                f"lock {system} {target} failed: {e}",
+                key=f"lock-failed:{system}:{target}:{dt.date.today()}",
+            )
 
     for published_month, published_at in manifest_published.items():
         m = bj.month_add(published_month, 2)
@@ -461,7 +474,7 @@ def tick(system, repo_root, knowledge_path, rig, alert, log, now=None, first_mon
         try:
             r = score(system, m, forecasts_root, scores_root, sesoi=sesoi)
         except LockError as e:
-            alert("score failed", f"score {system} {m} failed: {e}", key=f"score-failed:{system}:{m}")
+            alert("score failed", f"score {system} {m} failed: {e}", key=f"score-failed:{system}:{m}:{dt.date.today()}")
             continue
         msg = (f"{system} {m}: champion WAPE {r['wape_champion']:.3f} vs baseline {r['wape_baseline']:.3f}, "
                f"cumulative {r['cumulative']['decision']}")  # fmt: skip

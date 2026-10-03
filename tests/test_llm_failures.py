@@ -71,3 +71,43 @@ def test_a_network_failure_still_ends_the_run_so_the_supervisor_reports_it(tmp_p
 
     with pytest.raises(TimeoutError):
         run(down, root=str(tmp_path / "r"), n_campaigns=1)
+
+
+def test_a_stalled_campaign_is_not_convergence_so_the_run_carries_on(tmp_path):
+    rig, ctx, _ = run(empty_critic(10**6), root=str(tmp_path / "r"), n_campaigns=2)
+    first = ctx["campaigns"][0]
+    assert first["stalled"] and first["outcome"] == "stalled"
+    assert len(ctx["campaigns"]) == 2  # the old rule (nothing tested, nothing parked) ended the run here
+
+
+def test_a_sqlite_failure_ends_the_run_like_a_disk_failure(tmp_path):
+    import sqlite3
+
+    import pytest
+
+    from harness import daemon
+
+    real = daemon.S.HANDLERS["review_design"]
+
+    def full(rig, seat, task, ctx):
+        raise sqlite3.OperationalError("database or disk is full")
+
+    daemon.S.HANDLERS["review_design"] = full
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            run(fake_llm, root=str(tmp_path / "r"), n_campaigns=1)
+    finally:
+        daemon.S.HANDLERS["review_design"] = real
+
+
+def test_a_trickling_non_streamed_reply_cannot_outlive_its_deadline():
+    import io
+    import time as _time
+
+    import pytest
+
+    from harness.llm import read_body
+
+    assert read_body(io.BytesIO(b'{"a": 1}'), _time.monotonic() + 60) == b'{"a": 1}'
+    with pytest.raises(TimeoutError):
+        read_body(io.BytesIO(b"x" * 10), _time.monotonic() - 1, chunk=1)
