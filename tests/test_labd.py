@@ -250,6 +250,9 @@ def test_the_watchdog_restarts_a_process_that_stops_making_progress(tmp_path, mo
     monkeypatch.setattr(labd, "_BEAT", [labd.time.monotonic() - 10])  # last progress 10 s ago
     labd.watchdog(str(tmp_path / "alerts.jsonl"), limit=5, every=0.01, exit=lambda code: exited.set())
     assert exited.wait(2) and alerts(tmp_path)[-1]["kind"] == "hung"
+    labd.time.sleep(0.2)  # a watchdog whose exit() did not end the process must still stop: one alert per hang
+    assert [a["kind"] for a in alerts(tmp_path)].count("hung") == 1
+    assert labd.NOTIFY is False  # tests never raise desktop notifications (tests/conftest.py)
 
 
 def test_the_heartbeat_wrapper_keeps_the_llms_streaming_signature():
