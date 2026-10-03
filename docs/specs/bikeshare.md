@@ -184,10 +184,42 @@ One poll of Divvy is about 2,000 rows and 23 KB gzipped: about 0.6 M rows and 7 
 - **Acceptance:** a lock → edit forecast → score sequence is refused; a lock dated inside the target month is
   refused; scoring the fixture reproduces a hand-computed WAPE.
 
-**Built (8e):** `make ingest censor lock-month SYSTEM=chi RUN=runs/latest` as soon as month L is published, then
-commit and push `forecasts/chi/<L+2>/`. `make ingest censor score-month SYSTEM=chi MONTH=<L+2>` once L+2 is
-published writes `scores/chi/<L+2>.json`. The lock's `created_at` is checked against UTC midnight on the first of
-the month, which is earlier than midnight in any US time zone.
+**Built (8e):** fully automatic. `ops.prospective.tick(system, repo_root, knowledge_path, rig, alert, log, now=None)`
+runs once an hour from `ops/labd.py`'s own cycle (in its own try/except: a failure here is an alert, never a crash).
+It reads the latest published trip month L from the ingested manifest, and:
+- locks month L+2 the moment its window opens (the champion comes from the knowledge graph by default -- see
+  below -- and is never again replaced once locked) and alerts `"locked"`;
+- alerts `"missed lock"` (once per month, owner alert key) if a month's window closed with nothing locked, though
+  it could have been -- this is permanent and unrecoverable, unlike every other alert here;
+- scores every locked month whose target has since published and alerts `"scored"` with the champion-vs-baseline
+  result;
+- never raises for "nothing to do" (no new month due, nothing newly published) -- a no-op tick is cheap.
+
+The champion defaults to `champion_config_from_knowledge`: `Knowledge(knowledge_path, rig).current_champion()`, or
+the judge's BASELINE if the lab has never promoted one -- the same one true champion `harness/daemon.py` and
+`ops/nightshift.py` already trust, and the only source that also works for a seat-written `code:` champion. The CLI
+(`python -m ops.prospective lock`) keeps `--run` (replay one specific run's own ledger -- menu-key champions only,
+and not necessarily the lab's actual current champion if that run resumed rather than made its own promotions) and
+`--champion` (manual menu keys) as explicit, documented overrides for one-off use; neither is needed for the
+automatic path.
+
+Locks and scores live in a dedicated git worktree of this repo, branch `prospective`, at
+`<repo_root>/../nightshift-prospective` -- created on first use (`git worktree add`, from `origin/prospective` if the
+remote already has it, else a new branch from HEAD) and never the main checkout's own working tree or branch. A
+lock or score is `git add`ed and committed there, then pushed to `origin prospective` -- but only when the GitHub
+account `gh` is logged into is this repo's owner (`gh api user` vs. the owner parsed from the `origin` remote URL);
+if they differ, or `gh` fails, the commit stays local on that branch and the owner is alerted `"not pushed"` with
+the reason, since the account to push with is never switched automatically. The git commit and the GitHub push time
+are the public timestamp; optionally stamp `lock.json` with OpenTimestamps too. The lock's `created_at` is checked
+against UTC midnight on the first of the month, which is earlier than midnight in any US time zone.
+
+A judge change between lock and score does not block scoring -- a prospective month cannot be re-run once the real
+world has moved past it. Instead `score()` re-checks the judge digest stamped at lock time against the current one
+and, on a mismatch, records `judge_changed: true` in the score and `tick` alerts it alongside the `"scored"` result.
+
+The latest pooled decision (`scores/<system>/cumulative.json`) is surfaced in the lab's own records rather than
+living only on disk: `api/progress.py`'s progress payload carries it (`prospective`), and its one-line summary is
+folded into `digest_text`'s daily digest.
 
 **Challengers (owner decision, 2026-09-30: take the ~5 % backtest leads to the prospective test).** The lock also
 forecasts with up to four challengers: tests against the current champion in the knowledge graph whose backtest CI
