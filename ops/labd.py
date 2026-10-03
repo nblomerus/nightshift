@@ -5,7 +5,8 @@ Each cycle:
      snapshot; failures are logged, not fatal);
   2. run one lab run (several campaigns) with the knowledge graph, so it continues from everything learned;
   3. check, with the kernel, whether the champion now beats the original baseline by the rigspec's goal;
-  4. ping the owner, once per event, when: the goal is reached (and stop), the PI asks the owner for something the lab
+  4. ping the owner, once per event, when: the goal is reached (a milestone; the lab carries on unless the rigspec's goal
+     says "stop"), the PI asks the owner for something the lab
      cannot get itself, the lab stalls (runs in a row that test nothing), or a run crashes (once a day per error);
   5. wait for the next slot by the wall clock, so a Mac that slept starts the next run as soon as it wakes.
 
@@ -221,7 +222,9 @@ def after_run(ctx, spec, name, knowledge, state, alerts, seen, max_idle, log):
             desc = ctx["champion_desc"]
             msg = f"The champion beats the baseline by {g['point']:+.1%} (CI low {g['lo']:+.1%}) >= goal {goal:.0%}: "
             alert(alerts, "goal reached", msg + desc[:120], key=f"goal:{desc}", seen=seen)
-            status = "goal"
+            # a milestone: the lab keeps seeking improvement unless the rigspec says the goal ends it
+            if spec["decision_standards"]["goal"].get("stop"):
+                status = "goal"
     state["seen"] = sorted(seen)
     state["last_run"] = name
     return status

@@ -7,7 +7,7 @@ from agents.pi.handler import pi_plan
 from harness.daemon import load_rigspec, make_ctx, run
 from harness.fake_llm import fake_llm
 from judges import forecast_lab
-from state.knowledge import Knowledge, config_id
+from state.knowledge import Knowledge, config_id, standard_id
 from state.rig import Rig
 
 BASE = forecast_lab.BASELINE
@@ -107,7 +107,9 @@ def test_the_pi_is_never_offered_a_repeat_and_is_told_why(tmp_path):
     key = forecast_lab.data_keys("primary", 1, 0)[0]
     kg.test(ctx["run_id"], 1, "C0-S1-last_year_window", change="last_year_window", change_desc="yoy", treatment=YOY,
             comparator=BASE, comparator_desc="base", judge=digest, data_key=key, design="A",
-            decision=dict(decision="supported", point=0.1, lo=0.05, hi=0.15), grade="B", stage="written")  # fmt: skip
+            decision=dict(decision="supported", point=0.1, lo=0.05, hi=0.15), grade="B", stage="written",
+            standard=standard_id(spec["decision_standards"]["sesoi"],
+                                 spec["decision_standards"].get("promote_min_effect")))  # fmt: skip
     out = pi_plan(rig, rig.seat_for("pi"), {"payload": {}}, ctx)
     assert out["picks"] == []  # the PI asked for it; it was not on the menu
     menu = seen[0].split("Untested or unsettled changes")[1].split("EXPLORATORY")[0]
@@ -216,3 +218,17 @@ def test_the_brief_folds_old_tests_so_it_stays_bounded_at_live_scale(tmp_path):
     assert len(brief) < 8000  # unbounded growth at this scale reaches ~22,000 chars for this section alone
     for i in range(100):
         assert f"idea_{i}" in brief  # folded, never dropped
+
+
+def test_a_change_settled_under_older_standards_is_offered_again(tmp_path):
+    kg = Knowledge(str(tmp_path / "kg.db"), "lab")
+    run_id = kg.begin_run("r", "judge-1")
+    record = dict(change="x", change_desc="x", treatment=YOY, comparator=BASE, comparator_desc="base", judge="judge-1",
+                  data_key="confirmation", design="B", grade="B", stage="written")  # fmt: skip
+    dec = dict(decision="no_effect", point=0.055, lo=0.041, hi=0.08)  # a real +5.5 % gain, no_effect at a 10 % SESOI
+    kg.test(run_id, 1, "C1-S1-x", decision=dec, standard=standard_id(0.1), **record)
+    now = standard_id(0.05, 0.0)  # the owner's 2026-10-03 standards: any reliable improvement is supported
+    assert not kg.is_repeat(YOY, BASE, "judge-1", "confirmation", now)  # the same data may now decide differently
+    assert kg.is_repeat(YOY, BASE, "judge-1", "confirmation", standard_id(0.1))
+    kg.test(run_id, 2, "C2-S1-x", decision=dec, standard=now, **record)
+    assert kg.is_repeat(YOY, BASE, "judge-1", "confirmation", now)

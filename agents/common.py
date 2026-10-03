@@ -134,10 +134,17 @@ def decision_clause(std, alpha):
     """The decision rule of science/kernel.py::decide in words. Cites the SESOI only: the target effect
     sizes the design, it is not a threshold for the result."""
     s = f"{std['sesoi']:.1%}"
+    m = std.get("promote_min_effect")
+    sup = (
+        f"the CI lies above zero and the point estimate is at least the SESOI of {s}"
+        if m is None
+        else "the CI lies above zero (any reliable improvement)"
+        if m == 0
+        else f"the CI lies above zero and the point estimate is at least {m:.1%}"
+    )
     return (
-        f"Decision, on the {1 - alpha:.1%} two-way bootstrap CI of the relative WAPE reduction: supported if the "
-        f"CI lies above zero and the point estimate is at least the SESOI of {s}; harmful if the CI lies below "
-        f"zero; no effect if the CI lies within +-{s}; otherwise inconclusive."
+        f"Decision, on the {1 - alpha:.1%} two-way bootstrap CI of the relative WAPE reduction: supported if {sup}; "
+        f"harmful if the CI lies below zero; no effect if the CI lies within +-{s}; otherwise inconclusive."
     )
 
 

@@ -42,6 +42,12 @@ def config_id(config: dict) -> str:
     return "cfg:" + hashlib.sha256(json.dumps(config, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
+def standard_id(sesoi, min_effect=None) -> str:
+    """The decision standards a test was run under. A change settled under one standard is not settled under another:
+    the same data can give a different decision (e.g. a +5 % gain is no_effect at a 10 % SESOI, supported at 0)."""
+    return f"sesoi={sesoi}|min_effect={min_effect}"
+
+
 def is_terminal_park(reason: str | None) -> bool:
     """Whether a park note names a deterministic, terminal cause (see TERMINAL_PARK_REASONS)."""
     return any((reason or "").startswith(r) for r in TERMINAL_PARK_REASONS)
@@ -125,7 +131,8 @@ class Knowledge:
 
     def test(self, run: str, campaign: int, sid: str, *, change: str, change_desc: str, treatment: dict, comparator: dict,
              comparator_desc: str, judge: str, data_key, design: str, decision: dict | None, grade: str | None,
-             stage: str, reason: str = "", prereg: str = "", evaluation: str = "", idea_fp: str = ""):  # fmt: skip
+             stage: str, reason: str = "", prereg: str = "", evaluation: str = "", idea_fp: str = "",
+             standard: str = ""):  # fmt: skip
         """One slice: tested (decision, grade) or stopped before a decision (stage parked, reason). `idea_fp`
         (code ideas only) fingerprints the idea's text, so a later idea whose slugified name collides with this
         one's can still be told apart from it (agents/pi/handler.py::take_picks)."""
@@ -133,7 +140,7 @@ class Knowledge:
         seen = self.props(tid) is not None
         self.node(tid, "test", sid, rig=self.rig, treatment=config_id(treatment), decision=decision, grade=grade,
                   stage=stage, reason=reason, design=design, judge=judge, data=str(data_key), prereg=prereg,
-                  evaluation=evaluation or judge, idea_fp=idea_fp)  # fmt: skip
+                  evaluation=evaluation or judge, idea_fp=idea_fp, standard=standard)  # fmt: skip
         if seen:
             self.commit()
             return tid
@@ -258,7 +265,9 @@ class Knowledge:
         out.sort(key=lambda t: (t["run_started"] or 0, t["campaign"] or 0, t["slice"]))  # when it really happened
         return out
 
-    def is_repeat(self, treatment: dict, comparator: dict, evaluation: str, data_key) -> bool:
+    def is_repeat(
+        self, treatment: dict, comparator: dict, evaluation: str, data_key, standard: str | None = None
+    ) -> bool:
         """A decided test with the same treatment, comparator, evaluation (the judge's scoring semantics and data; the
         full judge digest for judges that do not declare one) and data already exists: running it again scores the same
         data under the same rule and can only reproduce the answer. A test parked for a deterministic, terminal reason
@@ -271,6 +280,9 @@ class Knowledge:
                 if t["treatment"] == config_id(treatment)
                 and t.get("evaluation", t["judge"]) == evaluation
                 and t["data"] == str(data_key)
+                and (
+                    standard is None or t.get("standard") == standard
+                )  # no standard recorded: decided under an older one
             ]
         )
 

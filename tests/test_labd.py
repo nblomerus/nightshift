@@ -134,11 +134,24 @@ def test_the_wait_follows_the_wall_clock_when_the_mac_sleeps(monkeypatch):
     assert len(naps) == 1 and naps[0] == 60.0  # woke past the target: the next run starts at once
 
 
-def test_the_lab_stops_at_its_goal(spec_dir, tmp_path):
+def test_the_goal_is_a_milestone_and_the_lab_keeps_improving(spec_dir, tmp_path):
     idle, state = pi({"picks": [], "lesson": "l"}), {}
     assert go(spec_dir, tmp_path, idle, state, goal=0.15) == "running"  # the baseline does not beat itself by 15%
-    assert go(spec_dir, tmp_path, idle, state, goal=-1.0) == "goal"
-    assert state["goal"]["met"] and [a["kind"] for a in alerts(tmp_path)][-1] == "goal reached"
+    assert go(spec_dir, tmp_path, idle, state, goal=-1.0) == "running"  # met: the owner is told, the lab carries on
+    assert state["goal"]["met"] and [a["kind"] for a in alerts(tmp_path)].count("goal reached") == 1
+    assert go(spec_dir, tmp_path, idle, state, goal=-1.0) == "running"  # and is not told again for the same champion
+    assert [a["kind"] for a in alerts(tmp_path)].count("goal reached") == 1
+
+
+def test_a_rigspec_can_still_make_the_goal_a_stop(spec_dir, tmp_path):
+    spec = load_rigspec("rigs/bikeshare-lab.json")
+    spec["judge_config"] = dict(root=str(spec_dir / "chi"))
+    spec["decision_standards"]["goal"].update(relative_wape_reduction=-1.0, stop=True)
+    p = tmp_path / "spec.json"
+    p.write_text(json.dumps(spec))
+    status = labd.cycle(pi({"picks": [], "lesson": "l"}), str(p), str(tmp_path / "kg.db"), str(tmp_path / "runs"), 1, {},
+                        str(tmp_path / "alerts.jsonl"), refresh=False, log=lambda *_: None)  # fmt: skip
+    assert status == "goal"
 
 
 def test_the_launchd_job_can_find_pyenv():

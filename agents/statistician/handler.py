@@ -137,8 +137,9 @@ def statistician_power_controls(rig, seat, task, ctx):
     ctx["variance_book"][(pre["treatment_key"], pre["design"])] = dict(se=se, pilot_effect=mu)
     alpha = pre["alpha"]
     z = norm.ppf(1 - alpha / 2)
-    power = float(norm.cdf((pre["target_effect"] - max(pre["sesoi"], z * se)) / se))  # reported only
-    d_sup = norm.cdf((mu - max(pre["sesoi"], z * se)) / se)
+    bar = pre["sesoi"] if pre.get("min_effect") is None else pre["min_effect"]  # what "supported" needs (kernel.decide)
+    power = float(norm.cdf((pre["target_effect"] - max(bar, z * se)) / se))  # reported only
+    d_sup = norm.cdf((mu - max(bar, z * se)) / se)
     d_harm = norm.cdf((-mu - z * se) / se)
     w = pre["sesoi"] - z * se
     d_null = max(0.0, norm.cdf((w - mu) / se) - norm.cdf((-w - mu) / se)) if w > 0 else 0.0
@@ -258,6 +259,7 @@ def statistician_power_controls(rig, seat, task, ctx):
         primary_metric="WAPE",
         unit="series x origin",
         sesoi=pre["sesoi"],
+        min_effect=pre.get("min_effect"),
         alpha=alpha,
         n_boot=1000,
         design=dict(name=pre["design"], T=d["T"], origins=d["origins"], bootstrap="two_way"),
@@ -279,7 +281,7 @@ def statistician_analyse(rig, seat, task, ctx):
     rng = np.random.default_rng(1)
     alpha = pre.alpha  # reserved at lock (campaign Bonferroni)
     est = sk.paired_effect(np.array(res["err_t"]), np.array(res["err_c"]), alpha, pre.n_boot, rng)
-    dec = sk.decide(est, pre.sesoi)
+    dec = sk.decide(est, pre.sesoi, pre.min_effect)
     ctx["ledger_rows"].append(dict(slice=sid, digest=pre.digest[:12], alpha=alpha, decision=dec, **est))
     out = dict(alpha=alpha, **est, decision=dec, sesoi=pre.sesoi, digest=pre.digest, judge_digest=judge)
     rig.proof(sid, "decision.json", out)

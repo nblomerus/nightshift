@@ -166,8 +166,9 @@ def test_challengers_are_the_unpromoted_backtest_leads_read_back_from_their_lock
     proof.mkdir(parents=True)
     (proof / "prereg_locked.json").write_text(json.dumps(dict(body=dict(treatment=tampered))))
     leads = pr.challengers(kg_path, "bikeshare-lab", str(runs), base)
-    assert [c["name"] for c in leads] == ["weekend_profile"]
-    assert leads[0]["config"] == lead and leads[0]["backtest"]["lo"] == 0.01
+    # holidays is supported against the CURRENT champion, so it was never promoted (it did not replicate): still a lead
+    assert [c["name"] for c in leads] == ["holidays", "weekend_profile"]
+    assert leads[1]["config"] == lead and leads[1]["backtest"]["lo"] == 0.01
 
 
 def test_a_judge_digest_mismatch_is_surfaced_in_the_score_not_refused(system, monkeypatch):
