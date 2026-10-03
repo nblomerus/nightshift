@@ -73,6 +73,7 @@ OK, CENSORED, NO_DATA = 1, 2, 0  # station-day status from GBFS snapshots
 FILES: tuple = ()
 DESIGNS: dict = {}
 _PANELS: dict = {}
+_PANELS_MAX = 2  # backstop: even a bad cache key can't leak more than this many panels
 _EVENTS: dict = {}
 _EVENTS_KNOWN_BEFORE = None  # leak canary only: drop every event processed on or after this date
 
@@ -123,6 +124,14 @@ def configure(config, standards=None):
                         origins=conf_all, window=FIRST_TARGET)  # fmt: skip
 
 
+def _file_sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def load_panel(root=None, as_of=None):
     """Station x day pickups for every ingested month published at or before `as_of` (all months if None)."""
     root = root or CONFIG["root"]
@@ -130,9 +139,9 @@ def load_panel(root=None, as_of=None):
         manifest = json.load(f)["months"]
     months = sorted(m for m, e in manifest.items() if as_of is None or e["published_at"] <= as_of)
     censor = os.path.join(root, "censor_day.csv.gz")
-    stamp = (
-        (os.path.getmtime(censor), json.dumps(CONFIG["censoring"], sort_keys=True)) if os.path.exists(censor) else None
-    )
+    # keyed on the censor table's own content, not its mtime: refresh_data rewrites this file every cycle even when
+    # nothing in it changed, and an mtime-keyed cache would otherwise grow a brand-new panel every cycle forever.
+    stamp = (_file_sha256(censor), json.dumps(CONFIG["censoring"], sort_keys=True)) if os.path.exists(censor) else None
     key = (root, as_of, tuple((m, manifest[m]["sha256"]) for m in months), stamp)
     if key in _PANELS:
         return _PANELS[key]
@@ -160,6 +169,8 @@ def load_panel(root=None, as_of=None):
         coords=coords,
     )
     _PANELS[key] = panel
+    while len(_PANELS) > _PANELS_MAX:  # backstop: drop the oldest entry, not just a key-stability fix away from a leak
+        del _PANELS[next(iter(_PANELS))]
     return panel
 
 

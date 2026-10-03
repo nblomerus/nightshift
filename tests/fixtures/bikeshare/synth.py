@@ -167,6 +167,19 @@ def stub_get(zips):
     return get
 
 
+def stub_get_with_failures(zips, broken):
+    """Like stub_get, but the zip fetch for any month in `broken` returns unparsable bytes (the operator's zip
+    is corrupt, or its schema changed) while the bucket listing still advertises every month normally."""
+    base = stub_get(zips)
+
+    def get(url):
+        if "list-type=2" in url:
+            return base(url)
+        return b"not a zip file" if url.rsplit("/", 1)[1][:6] in broken else base(url)
+
+    return get
+
+
 def gbfs_day(root, day, stations, empty_polls=None, missing_polls=None, every=300, tz="America/Chicago"):
     """Write one collector day file (ops/gbfs_collect.py format) and its station_information.
     stations: {station_id: name}; empty_polls / missing_polls: {station_id: number of polls}."""
