@@ -67,17 +67,25 @@ def test_a_repeat_is_the_same_change_champion_judge_and_data(tmp_path):
     assert len(kg.tests()) == 1  # writing the same slice again updates it, never duplicates it
 
 
-def test_a_change_parked_as_underpowered_is_a_repeat_but_other_parks_are_not(tmp_path):
+def test_every_deterministic_terminal_park_is_a_repeat_but_a_recoverable_one_is_not(tmp_path):
     kg = Knowledge(str(tmp_path / "kg.db"), "lab")
     run_id = kg.begin_run("r", "judge-1")
     record = dict(change_desc="x", comparator=BASE, comparator_desc="base", judge="judge-1", data_key="confirmation",
                   design="B", decision=None, grade=None, stage="parked")  # fmt: skip
-    kg.test(run_id, 1, "C1-S1-a", change="a", treatment=YOY, reason="underpowered at largest design", **record)
-    other = dict(BASE, holidays=True)
-    kg.test(run_id, 1, "C1-S2-b", change="b", treatment=other, reason="revision cap reached; last objection: x", **record)
-    assert kg.is_repeat(YOY, BASE, "judge-1", "confirmation")  # the seeded power check would park it again
-    assert not kg.is_repeat(YOY, BASE, "judge-2", "confirmation")  # new data: power may differ
-    assert not kg.is_repeat(other, BASE, "judge-1", "confirmation")  # a design objection can be answered
+    # Each is a park whose cause is a function only of the treatment/data (true repeat), except the last: a stalled
+    # slice (a handler that crashed) is random/recoverable, so re-offering it is not reproducing a known answer.
+    cases = [
+        ("underpowered", "underpowered at largest design", True),
+        ("design", "design check failed: ['censor_fresh']", True),
+        ("leak", "leak canary fired", True),
+        ("revcap", "revision cap reached; last objection: x", True),
+        ("stalled", "stalled at run: experimenter failed (ConnectionError)", False),
+    ]
+    for i, (name, reason, _) in enumerate(cases):
+        kg.test(run_id, 1, f"C1-S{i + 1}-{name}", change=name, treatment=dict(BASE, holidays=i), reason=reason, **record)
+    for i, (name, reason, repeat) in enumerate(cases):
+        assert kg.is_repeat(dict(BASE, holidays=i), BASE, "judge-1", "confirmation") is repeat, name
+    assert not kg.is_repeat(dict(BASE, holidays=0), BASE, "judge-2", "confirmation")  # new data: a repeat may differ
 
 
 def test_the_pi_is_never_offered_a_repeat_and_is_told_why(tmp_path):
@@ -139,3 +147,69 @@ def test_regrade_rewrites_b_grades_from_the_replication_proof(tmp_path):
     assert sorted(changed.values()) == ["A: negative result, replicated", "B: supported, not replicated"]
     assert {t["grade"] for t in kg.tests()} >= {"C: deviated from prereg (exploratory)"}  # C is left alone
     assert regrade(kg, str(tmp_path / "runs")) == {}  # idempotent
+
+
+def test_a_lesson_with_no_real_words_never_swallows_real_ones(tmp_path):
+    """ROADMAP item 5a: a content-free lesson ('N/A') used to swallow every real lesson into itself when it was
+    the newest (processed first); it must now keep its own slot and never fold, or be folded into, another."""
+    kg = Knowledge(str(tmp_path / "kg.db"), "lab")
+    r1 = kg.begin_run("r1", "j", started=1.0)
+    kg.lesson(r1, 1, "Non-positive exploratory screens remain a hard gate for listed changes")
+    kg.lesson(r1, 2, "Composite features of tight positive results are worth a confirmatory slot")
+    kg.lesson(r1, 3, "The champion's last 28 day feature still dominates every variant tried so far")
+    kg.lesson(r1, 4, "N/A")  # newest (processed first): a content-free reply with no real words at all
+    ls = kg.lessons(8)
+    assert len(ls) == 4  # all three real lessons kept, the degenerate one in its own slot, nothing swallowed
+    assert not any("stated" in x for x in ls)  # none of them got folded into anything
+    assert any(x == "N/A" for x in ls)
+    assert any("hard gate" in x for x in ls)
+    assert any("Composite" in x for x in ls)
+    assert any("dominates every variant" in x for x in ls)
+
+
+def test_runs_without_progress_ignores_a_stalled_test_node(tmp_path):
+    """ROADMAP item 4: a slice that stalled mid-workflow (a handler kept failing on it) never reached 'written'
+    or 'parked', so it must not count as progress the way runs_without_tests (any test node) wrongly did."""
+    kg = Knowledge(str(tmp_path / "kg.db"), "lab")
+    r1 = kg.begin_run("r1", "j", started=1.0)
+    kg.test(r1, 1, "S1", change="x", change_desc="x", treatment={"a": 1}, comparator={}, comparator_desc="b",
+            judge="j", data_key="k", design="B", decision=None, grade=None, stage="design_review",
+            reason="stalled at design_review: methodologist_draft failed (ConnectionError)")  # fmt: skip
+    r2 = kg.begin_run("r2", "j", started=2.0)
+    assert kg.runs_without_tests() == 1  # r1 "tested" something (a test node exists), even though it never finished
+    assert kg.runs_without_progress() == 2  # neither run ever produced real progress
+
+
+def test_a_request_asked_again_after_being_answered_reopens(tmp_path):
+    """ROADMAP item 5c: the circuit breaker's owner request could only ever be answered once; a later recurrence
+    of the same condition must reopen it, not leave it stuck 'answered' forever."""
+    kg = Knowledge(str(tmp_path / "kg.db"), "lab")
+    run_id = kg.begin_run("r", "j")
+    ask = dict(what="An events calendar", why="w", how="h", done="d")
+    rid = kg.request(run_id, 1, ask)
+    kg.reply("None exists", rid)
+    assert kg.requests("open") == [] and kg.requests("answered")[0]["id"] == rid
+    again = kg.request(run_id, 2, ask)
+    assert again == rid  # the same condition, not a new request
+    (r,) = kg.requests("open")
+    assert r["id"] == rid  # reopened, not stuck "answered" forever
+
+
+def test_the_brief_folds_old_tests_so_it_stays_bounded_at_live_scale(tmp_path):
+    """ROADMAP item 2: the 'tested against THIS champion' section is unbounded today. At something like the live
+    lab's scale (100+ tests, ~100 change keys, one champion, never promoted) it must stay bounded, and no change
+    may disappear: every distinct change still appears, in the recent lines or the folded summary."""
+    kg = Knowledge(str(tmp_path / "kg.db"), "lab")
+    run_id = kg.begin_run("r", "j")
+    decisions = ["no_effect", "inconclusive", "supported", "harmful"]
+    n = 113
+    for i in range(n):
+        change, dec = f"idea_{i % 100}", decisions[i % len(decisions)]
+        kg.test(run_id, 1, f"S{i:03d}", change=change, change_desc=change, treatment=dict(BASE, holidays=i),
+                comparator=BASE, comparator_desc="base", judge="j", data_key=f"k{i}", design="B",
+                decision=dict(decision=dec, point=0.01, lo=-0.01, hi=0.03), grade="C", stage="written")  # fmt: skip
+    brief = kg.brief(BASE, "base", [])
+    assert brief.count("Tested against THIS champion") == 1
+    assert len(brief) < 8000  # unbounded growth at this scale reaches ~22,000 chars for this section alone
+    for i in range(100):
+        assert f"idea_{i}" in brief  # folded, never dropped

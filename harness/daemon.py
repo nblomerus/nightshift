@@ -189,7 +189,8 @@ def record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_b
             evaluation=S.evaluation_key(J),
                 data_key=ctx["primary_seed"][e["slice"]], design=pre.design["name"],
                 decision=dict(decision=e["decision"], point=e["point"], lo=e["lo"], hi=e["hi"]), grade=e["grade"],
-                stage="written", prereg=pre.digest)  # fmt: skip
+                stage="written", prereg=pre.digest,
+                idea_fp=ctx["ideas"].get(e["key"], {}).get("idea_fp", ""))  # fmt: skip
     for sid in parked:
         draft = rig.read_proof(sid, "prereg_draft.json") or {}
         key = draft.get("treatment_key") or sid.split("-", 2)[-1]
@@ -233,6 +234,7 @@ def record_campaign(rig, ctx, k, champion_before, screen, new, parked, lessons_b
             grade=None,
             stage=rig.stage(sid),
             reason=reason,
+            idea_fp=ctx["ideas"].get(key, {}).get("idea_fp", ""),
         )
     for text in ctx["lessons"][lessons_before:]:
         kg.lesson(run, k, text)

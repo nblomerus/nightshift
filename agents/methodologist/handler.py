@@ -14,6 +14,7 @@ from agents.common import (
     persona,
     statement_for,
 )
+from state.knowledge import REVISION_CAP_REACHED
 
 
 def methodologist_draft(rig, seat, task, ctx):
@@ -24,7 +25,7 @@ def methodologist_draft(rig, seat, task, ctx):
     designs = "\n".join(f"- {k}: {v['desc']}" for k, v in J.DESIGNS.items())
     std = rig.spec["decision_standards"]
     if prev and prev.get("revision", 0) + 1 >= REVISION_CAP:
-        rig.advance(seat, sid, "parked", checks={"revision_cap_reached": True}, note="revision cap reached")
+        rig.advance(seat, sid, "parked", checks={"revision_cap_reached": True}, note=REVISION_CAP_REACHED)
         rig.send(seat, rig.seat_for("pi"), f"{sid} parked after {REVISION_CAP} prereg revisions: {feedback[:300]}", sid)
         return dict(parked=True)
     out = ask_json(
