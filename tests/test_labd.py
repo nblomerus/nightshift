@@ -184,3 +184,17 @@ def test_the_cli_lists_requests_and_refuses_an_unknown_one(tmp_path, capsys):
     assert "[open]" in out and "What: An events calendar" in out and "How: city open data" in out
     with pytest.raises(SystemExit):
         nightshift.main(["reply", "x", "--request", "request:nope", "--rigspec", spec, "--knowledge", kg_path])
+
+
+def test_a_request_asked_inside_the_cooldown_is_pinged_when_it_ends(spec_dir, tmp_path):
+    ask = {"what": "Planned station openings", "why": "w", "how": "h", "done": "d"}
+    state = {"last_data_ping": labd.time.time() - 3600}  # pinged an hour ago about something else
+    go(spec_dir, tmp_path, pi({"picks": [], "lesson": "l", "ask_owner": ask}), state)
+    assert not [a for a in alerts(tmp_path) if a["kind"] == "needs you"]  # inside the cooldown
+    state["last_data_ping"] -= labd.DATA_PING_EVERY  # a day later; the PI does not ask again while it is open
+    go(spec_dir, tmp_path, pi({"picks": [], "lesson": "l"}), state)
+    needs = [a for a in alerts(tmp_path) if a["kind"] == "needs you"]
+    assert len(needs) == 1 and "Planned station openings" in needs[0]["message"]
+    state["last_data_ping"] -= labd.DATA_PING_EVERY  # and it is not pinged again unless asked again
+    go(spec_dir, tmp_path, pi({"picks": [], "lesson": "l"}), state)
+    assert len([a for a in alerts(tmp_path) if a["kind"] == "needs you"]) == 1
