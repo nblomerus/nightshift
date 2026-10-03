@@ -78,7 +78,7 @@ def test_every_deterministic_terminal_park_is_a_repeat_but_a_recoverable_one_is_
         ("underpowered", "underpowered at largest design", True),
         ("design", "design check failed: ['censor_fresh']", True),
         ("leak", "leak canary fired", True),
-        ("revcap", "revision cap reached; last objection: x", True),
+        ("revcap", "revision cap reached; last objection: x", False),  # LLM review rounds: once may be bad luck
         ("stalled", "stalled at run: experimenter failed (ConnectionError)", False),
     ]
     for i, (name, reason, _) in enumerate(cases):
@@ -86,6 +86,9 @@ def test_every_deterministic_terminal_park_is_a_repeat_but_a_recoverable_one_is_
     for i, (name, _reason, repeat) in enumerate(cases):
         assert kg.is_repeat(dict(BASE, holidays=i), BASE, "judge-1", "confirmation") is repeat, name
     assert not kg.is_repeat(dict(BASE, holidays=0), BASE, "judge-2", "confirmation")  # new data: a repeat may differ
+    kg.test(run_id, 2, "C2-S1-revcap", change="revcap", treatment=dict(BASE, holidays=3),
+            reason="revision cap reached; last objection: y", **record)  # fmt: skip
+    assert kg.is_repeat(dict(BASE, holidays=3), BASE, "judge-1", "confirmation")  # the second cap settles it
 
 
 def test_the_pi_is_never_offered_a_repeat_and_is_told_why(tmp_path):

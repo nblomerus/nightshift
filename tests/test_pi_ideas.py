@@ -76,21 +76,25 @@ def test_a_disambiguated_idea_proposed_again_under_its_original_name_is_still_a_
     assert not picks3 and dropped3 and "already decided" in dropped3[0]
 
 
-def test_a_code_idea_that_hit_the_revision_cap_is_not_retried_under_the_same_name(tmp_path):
+def test_a_code_idea_that_hit_the_revision_cap_twice_is_not_retried_under_the_same_name(tmp_path):
     kg = Knowledge(str(tmp_path / "kg.db"), "lab")
     run_id = kg.begin_run("r", "j")
     idea = "Use the station's trailing 14-day pickup trend as a feature."
     ctx1 = new_ctx()
     picks1, _ = take_picks({"picks": [{"key": "new", "name": "trailing_trend", "idea": idea}]}, {}, True, kg, ctx1)
     key = picks1[0]["key"]
-    kg.test(run_id, 1, "C1-S1-x", change=key, change_desc="x", treatment=dict(CHAMPION, code=[]), comparator=CHAMPION,
-            comparator_desc="c", judge="j", data_key="k", design="B", decision=None, grade=None, stage="parked",
-            reason="revision cap reached; last objection: needs a cleaner draft",
-            idea_fp=ctx1["ideas"][key]["idea_fp"])  # fmt: skip
-
-    ctx2 = new_ctx()
-    picks2, dropped2 = take_picks({"picks": [{"key": "new", "name": "trailing_trend", "idea": idea}]}, {}, True, kg, ctx2)
-    assert not picks2 and dropped2 and "already decided" in dropped2[0]
+    for n in (1, 2):
+        kg.test(run_id, n, f"C{n}-S1-x", change=key, change_desc="x", treatment=dict(CHAMPION, code=[]),
+                comparator=CHAMPION, comparator_desc="c", judge="j", data_key="k", design="B", decision=None,
+                grade=None, stage="parked", reason="revision cap reached; last objection: needs a cleaner draft",
+                idea_fp=ctx1["ideas"][key]["idea_fp"])  # fmt: skip
+        ctx2 = new_ctx()
+        picks2, dropped2 = take_picks({"picks": [{"key": "new", "name": "trailing_trend", "idea": idea}]}, {}, True, kg,
+                                      ctx2)  # fmt: skip
+        if n == 1:
+            assert picks2 and not dropped2  # one cap may be bad luck in review: it may be tried again
+        else:
+            assert not picks2 and dropped2 and "already decided" in dropped2[0]
 
 
 def test_a_stalled_code_idea_is_not_treated_as_a_repeat(tmp_path):

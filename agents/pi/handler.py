@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from agents.common import ask_json, change_desc, evaluation_key, persona
-from state.knowledge import idea_fingerprint, is_terminal_park
+from state.knowledge import idea_fingerprint, settled
 
 
 # ---------------------------------------------------------------------------- PI
@@ -171,16 +171,9 @@ def take_picks(out, menu, new_ideas, kg, ctx):
     tests, champion = (kg.tests() if kg is not None else []), kg_champion(ctx)
 
     def find_prior(k):
-        return next(
-            (
-                t
-                for t in tests
-                if t["change"] == k
-                and t["champion"] == champion
-                and (t["decision"] or (t["stage"] == "parked" and is_terminal_park(t.get("reason"))))
-            ),
-            None,
-        )
+        """The earlier attempts at this code idea against this champion, if they settle it (else None)."""
+        mine = [t for t in tests if t["change"] == k and t["champion"] == champion]
+        return mine if mine and settled(mine) else None
 
     for p in out.get("picks", []) or []:
         if not isinstance(p, dict):
@@ -196,7 +189,7 @@ def take_picks(out, menu, new_ideas, kg, ctx):
             # slug but with different text is a different hypothesis and must not collide with it. Only when the
             # slug collides AND the text matches is this truly the same idea already settled.
             prior = find_prior(key)
-            if prior is not None and prior.get("idea_fp") != fp:
+            if prior is not None and all(t.get("idea_fp") != fp for t in prior):
                 key = f"code:{name[:33]}_{fp[:6]}"
                 # This disambiguated key embeds fp[:6], so any test already filed under it is, by construction,
                 # the same content: re-proposing a once-disambiguated idea under its original name must still

@@ -27,10 +27,13 @@ UNDERPOWERED = "underpowered at largest design"  # agents/statistician/handler.p
 DESIGN_CHECK_FAILED = "design check failed"  # agents/statistician/handler.py's park note (judge-specific guard)
 LEAK_CANARY_FIRED = "leak canary fired"  # agents/statistician/handler.py's park note
 REVISION_CAP_REACHED = "revision cap reached"  # agents/methodologist/handler.py's park note
-# Every park note whose cause is a function only of the treatment/data, not of randomness or a fixable draft:
+# Park notes whose cause is a function only of the treatment/data (seeded power check, judge guards, leak canary):
 # re-running the same treatment on the same data under the same judge can only park it again. Defined once here and
 # imported by the handlers that write these notes, so the literal strings cannot drift out of sync with is_repeat.
-TERMINAL_PARK_REASONS = (UNDERPOWERED, DESIGN_CHECK_FAILED, LEAK_CANARY_FIRED, REVISION_CAP_REACHED)
+TERMINAL_PARK_REASONS = (UNDERPOWERED, DESIGN_CHECK_FAILED, LEAK_CANARY_FIRED)
+# A revision cap comes from LLM review rounds, not from the data, so one could be bad luck: it counts as terminal only
+# once the same treatment has hit it this many times on the same data.
+REVISION_CAP_REPEATS = 2
 LESSON_OVERLAP = 0.6  # share of the shorter lesson's words two lessons must share to count as one idea restated
 RECENT_TESTS = 20  # individual lines kept in the PI's brief for the current champion; older tests fold by change
 
@@ -42,6 +45,17 @@ def config_id(config: dict) -> str:
 def is_terminal_park(reason: str | None) -> bool:
     """Whether a park note names a deterministic, terminal cause (see TERMINAL_PARK_REASONS)."""
     return any((reason or "").startswith(r) for r in TERMINAL_PARK_REASONS)
+
+
+def settled(tests: list[dict]) -> bool:
+    """Whether these earlier attempts at one treatment (same champion, judge and data) already settle it: a decision,
+    a deterministic terminal park, or the revision cap hit REVISION_CAP_REPEATS times."""
+    parked = [t for t in tests if t["stage"] == "parked"]
+    return (
+        any(t["decision"] for t in tests)
+        or any(is_terminal_park(t.get("reason")) for t in parked)
+        or sum((t.get("reason") or "").startswith(REVISION_CAP_REACHED) for t in parked) >= REVISION_CAP_REPEATS
+    )
 
 
 def idea_fingerprint(idea: str) -> str:
@@ -250,12 +264,14 @@ class Knowledge:
         data under the same rule and can only reproduce the answer. A test parked for a deterministic, terminal reason
         (see TERMINAL_PARK_REASONS) counts too: the cause is a function only of the treatment/data, so on the same
         data it parks again the same way."""
-        return any(
-            t["treatment"] == config_id(treatment)
-            and t.get("evaluation", t["judge"]) == evaluation
-            and t["data"] == str(data_key)
-            and (t["decision"] or (t["stage"] == "parked" and is_terminal_park(t.get("reason"))))
-            for t in self.tests(comparator)
+        return settled(
+            [
+                t
+                for t in self.tests(comparator)
+                if t["treatment"] == config_id(treatment)
+                and t.get("evaluation", t["judge"]) == evaluation
+                and t["data"] == str(data_key)
+            ]
         )
 
     def lessons(self, limit=8, distinct=True) -> list[str]:
