@@ -20,7 +20,6 @@ anything: decisions come from the kernel inside each run; the goal check is the 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import datetime as dt
 import json
 import os
@@ -159,7 +158,8 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
             alerts,
             "crashed",
             f"run {name} failed: {type(e).__name__}: {e}",
-            key=f"crash:{dt.date.today()}:{type(e).__name__}:{e}",  # an outage that lasts days pings once a day
+            # an outage that lasts days pings once a day; not keyed on the text, which holds this run's timestamped path
+            key=f"crash:{dt.date.today()}:{type(e).__name__}",
             seen=seen,
         )
         log(traceback.format_exc())
@@ -285,8 +285,10 @@ def main(argv=None):
         alert(alerts, "crashed", f"supervisor cannot start: {', '.join(missing)} not set in its environment",
               key=f"env:{dt.date.today()}", seen=seen)  # fmt: skip
         state["seen"] = sorted(seen)
-        with contextlib.suppress(OSError):
+        try:
             save_state(state_path, state)
+        except OSError as e:  # the dedup key could not be kept: say so in the log, without another notification
+            print(f"could not save supervisor state ({e}); the alert above may repeat on each restart", flush=True)
         return 2
     watchdog(alerts)
     llm = openai_compatible_llm(
@@ -300,8 +302,8 @@ def main(argv=None):
         t0 = time.time()
         beat()
         state.update(last_start=t0, every=a.every, status="running")
+        try_save(state_path, state, alerts)  # a state file that cannot be written must not stop the lab's work
         try:
-            save_state(state_path, state)
             status = cycle(llm, a.rigspec, knowledge, a.runs_dir, a.campaigns, state, alerts, a.max_idle)
             state["status"] = "waiting" if status != "goal" else "goal reached"
             maybe_digest(state, alerts, REPO_ROOT, spec.get("rig", "rig"))
@@ -313,10 +315,7 @@ def main(argv=None):
             alert(alerts, "crashed", f"supervisor: {type(e).__name__}: {e}", key=key, seen=seen)
             state["seen"] = sorted(seen)
             traceback.print_exc()
-        try:
-            save_state(state_path, state)
-        except OSError as e:  # a full disk: report and keep the schedule; the state is rebuilt from the next run
-            alert(alerts, "crashed", f"supervisor state not saved: {e}")
+        try_save(state_path, state, alerts)
         if status == "goal":
             print("goal reached: the lab stops", flush=True)
             return 0
@@ -348,6 +347,16 @@ def prospective_tick(spec, knowledge, alerts, seen, log):
         alert(alerts, "lock failed", f"prospective tick: {type(e).__name__}: {e}",
               key=f"prospective:{dt.date.today()}:{type(e).__name__}", seen=seen)  # fmt: skip
         log(traceback.format_exc())
+
+
+def try_save(path, state, alerts):
+    """save_state, reporting a failure (a full disk, a read-only volume) once a day instead of stopping the loop."""
+    try:
+        save_state(path, state)
+    except OSError as e:
+        seen = set(state.setdefault("seen", []))  # kept in memory: the file that would hold it cannot be written
+        alert(alerts, "crashed", f"supervisor state not saved: {e}", key=f"state-save:{dt.date.today()}", seen=seen)
+        state["seen"] = sorted(seen)
 
 
 def save_state(path, state):

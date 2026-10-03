@@ -370,3 +370,23 @@ def test_a_supervisor_without_its_llm_settings_says_so_once_a_day(tmp_path, monk
     assert labd.main(args) == 2 and labd.main(args) == 2  # launchd restarts it every 5 minutes
     crashed = [a for a in alerts(tmp_path / "knowledge") if a["kind"] == "crashed"]
     assert len(crashed) == 1 and "LLM_BASE_URL" in crashed[0]["message"]
+
+
+def test_an_unwritable_state_file_is_reported_once_a_day_not_every_loop(tmp_path):
+    state, path = {}, str(tmp_path / "missing-dir" / "labd_state.json")  # the directory does not exist: every write fails
+    for _ in range(3):
+        labd.try_save(path, state, str(tmp_path / "alerts.jsonl"))
+    assert [a["kind"] for a in alerts(tmp_path)] == ["crashed"]
+
+
+def test_a_crash_whose_message_changes_every_cycle_still_pings_once_a_day(spec_dir, tmp_path):
+    n = [0]
+
+    def broken(prompt, system=None, tier=None):
+        n[0] += 1
+        raise ConnectionError(f"endpoint down (attempt {n[0]})")  # e.g. a timestamped path in the text
+
+    state = {}
+    for _ in range(3):
+        assert go(spec_dir, tmp_path, broken, state) == "crashed"
+    assert [a["kind"] for a in alerts(tmp_path)] == ["crashed"]

@@ -358,3 +358,27 @@ def test_a_push_skipped_for_the_wrong_account_goes_out_once_the_owner_is_logged_
     assert (
         pr.tick("chi", str(lab["repo"]), kg_path, "bikeshare-lab", alert, lambda s: None, now=BEFORE)["pushed"] is False
     )
+
+
+def test_a_worktree_deleted_by_hand_is_recreated_on_its_own_branch(lab):
+    import shutil
+
+    run = fake_gh("nblomerus").run
+    path = pr.ensure_prospective_worktree(str(lab["repo"]), run=run)
+    shutil.rmtree(path)  # rm -rf instead of git worktree remove: the branch and a stale worktree entry remain
+    assert pr.ensure_prospective_worktree(str(lab["repo"]), run=run) == path and os.path.isdir(path)
+
+
+def test_an_unreachable_origin_never_forks_a_new_prospective_branch(lab):
+    real = fake_gh("nblomerus").run
+
+    def offline(args, **kwargs):
+        if args[:2] == ["git", "ls-remote"]:
+            return subprocess.CompletedProcess(args, 128, stdout="", stderr="fatal: unable to access")
+        return real(args, **kwargs)
+
+    with pytest.raises(pr.LockError, match="cannot reach origin"):
+        pr.ensure_prospective_worktree(str(lab["repo"]), run=offline)
+    branches = subprocess.run(["git", "branch", "--list", "prospective"], cwd=str(lab["repo"]), capture_output=True,
+                              text=True).stdout  # fmt: skip
+    assert branches.strip() == ""  # nothing created: the next tick retries once origin answers
