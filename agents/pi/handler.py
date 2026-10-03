@@ -168,6 +168,20 @@ STALL_RETRY = (
 def take_picks(out, menu, new_ideas, kg, ctx):
     """The PI's valid picks (at most two) and why the others were dropped."""
     picks, dropped = [], []
+    tests, champion = (kg.tests() if kg is not None else []), kg_champion(ctx)
+
+    def find_prior(k):
+        return next(
+            (
+                t
+                for t in tests
+                if t["change"] == k
+                and t["champion"] == champion
+                and (t["decision"] or (t["stage"] == "parked" and is_terminal_park(t.get("reason"))))
+            ),
+            None,
+        )
+
     for p in out.get("picks", []) or []:
         if not isinstance(p, dict):
             continue
@@ -181,19 +195,13 @@ def take_picks(out, menu, new_ideas, kg, ctx):
             # Identity is the idea's CONTENT, not the (40-char-truncated) name alone: a prior idea under the same
             # slug but with different text is a different hypothesis and must not collide with it. Only when the
             # slug collides AND the text matches is this truly the same idea already settled.
-            prior = next(
-                (
-                    t
-                    for t in (kg.tests() if kg is not None else [])
-                    if t["change"] == key
-                    and t["champion"] == kg_champion(ctx)
-                    and (t["decision"] or (t["stage"] == "parked" and is_terminal_park(t.get("reason"))))
-                ),
-                None,
-            )
+            prior = find_prior(key)
             if prior is not None and prior.get("idea_fp") != fp:
                 key = f"code:{name[:33]}_{fp[:6]}"
-                prior = None
+                # This disambiguated key embeds fp[:6], so any test already filed under it is, by construction,
+                # the same content: re-proposing a once-disambiguated idea under its original name must still
+                # find that history, not be waved through as new every time the slug collides again.
+                prior = find_prior(key)
             decided = prior is not None
             if any(q["key"].startswith("code:") for q in picks):
                 dropped.append(f"{key}: only one new idea per campaign")

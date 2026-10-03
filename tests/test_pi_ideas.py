@@ -44,6 +44,38 @@ def test_two_ideas_with_the_same_long_name_but_different_text_both_proceed(tmp_p
     assert not picks3 and dropped3 and "already decided" in dropped3[0]
 
 
+def test_a_disambiguated_idea_proposed_again_under_its_original_name_is_still_a_repeat(tmp_path):
+    """A slug collision disambiguates idea B away from idea A once; once B itself is decided under its own
+    disambiguated key, proposing B's exact text again (still under the shared original name) must still find
+    that history and be dropped, not re-derive the same disambiguated key and sail through as new."""
+    kg = Knowledge(str(tmp_path / "kg.db"), "lab")
+    run_id = kg.begin_run("r", "j")
+    first_idea = "Use each station's trailing 7-day mean pickups as a feature."
+    ctx1 = new_ctx()
+    picks1, _ = take_picks({"picks": [{"key": "new", "name": LONG_NAME, "idea": first_idea}]}, {}, True, kg, ctx1)
+    key1 = picks1[0]["key"]
+    kg.test(run_id, 1, "C1-S1-x", change=key1, change_desc="x", treatment=dict(CHAMPION, code=[]), comparator=CHAMPION,
+            comparator_desc="c", judge="j", data_key="k", design="B",
+            decision=dict(decision="no_effect", point=0.0, lo=-0.01, hi=0.01), grade="C", stage="written",
+            idea_fp=ctx1["ideas"][key1]["idea_fp"])  # fmt: skip
+
+    # A different idea under the same name disambiguates (campaign 2) and is itself decided under its own key.
+    second_idea = "Use the station's distance to the nearest rail stop as a feature."
+    ctx2 = new_ctx()
+    picks2, _ = take_picks({"picks": [{"key": "new", "name": LONG_NAME, "idea": second_idea}]}, {}, True, kg, ctx2)
+    key2 = picks2[0]["key"]
+    assert key2 != key1
+    kg.test(run_id, 2, "C2-S1-x", change=key2, change_desc="x", treatment=dict(CHAMPION, code=[]), comparator=CHAMPION,
+            comparator_desc="c", judge="j", data_key="k2", design="B",
+            decision=dict(decision="no_effect", point=0.0, lo=-0.01, hi=0.01), grade="C", stage="written",
+            idea_fp=ctx2["ideas"][key2]["idea_fp"])  # fmt: skip
+
+    # The second idea's exact text proposed a third time, still under the original shared name: a genuine repeat.
+    ctx3 = new_ctx()
+    picks3, dropped3 = take_picks({"picks": [{"key": "new", "name": LONG_NAME, "idea": second_idea}]}, {}, True, kg, ctx3)
+    assert not picks3 and dropped3 and "already decided" in dropped3[0]
+
+
 def test_a_code_idea_that_hit_the_revision_cap_is_not_retried_under_the_same_name(tmp_path):
     kg = Knowledge(str(tmp_path / "kg.db"), "lab")
     run_id = kg.begin_run("r", "j")
@@ -74,7 +106,8 @@ def test_a_stalled_code_idea_is_not_treated_as_a_repeat(tmp_path):
             idea_fp=ctx1["ideas"][key]["idea_fp"])  # fmt: skip
 
     ctx2 = new_ctx()
-    picks2, dropped2 = take_picks({"picks": [{"key": "new", "name": "subway_entrances", "idea": idea}]}, {}, True, kg, ctx2)
+    out2 = {"picks": [{"key": "new", "name": "subway_entrances", "idea": idea}]}
+    picks2, dropped2 = take_picks(out2, {}, True, kg, ctx2)
     assert picks2 and not dropped2  # a crash, not a deterministic cause: worth trying again
 
 

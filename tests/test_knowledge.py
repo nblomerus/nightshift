@@ -83,7 +83,7 @@ def test_every_deterministic_terminal_park_is_a_repeat_but_a_recoverable_one_is_
     ]
     for i, (name, reason, _) in enumerate(cases):
         kg.test(run_id, 1, f"C1-S{i + 1}-{name}", change=name, treatment=dict(BASE, holidays=i), reason=reason, **record)
-    for i, (name, reason, repeat) in enumerate(cases):
+    for i, (name, _reason, repeat) in enumerate(cases):
         assert kg.is_repeat(dict(BASE, holidays=i), BASE, "judge-1", "confirmation") is repeat, name
     assert not kg.is_repeat(dict(BASE, holidays=0), BASE, "judge-2", "confirmation")  # new data: a repeat may differ
 
@@ -175,7 +175,7 @@ def test_runs_without_progress_ignores_a_stalled_test_node(tmp_path):
     kg.test(r1, 1, "S1", change="x", change_desc="x", treatment={"a": 1}, comparator={}, comparator_desc="b",
             judge="j", data_key="k", design="B", decision=None, grade=None, stage="design_review",
             reason="stalled at design_review: methodologist_draft failed (ConnectionError)")  # fmt: skip
-    r2 = kg.begin_run("r2", "j", started=2.0)
+    kg.begin_run("r2", "j", started=2.0)
     assert kg.runs_without_tests() == 1  # r1 "tested" something (a test node exists), even though it never finished
     assert kg.runs_without_progress() == 2  # neither run ever produced real progress
 
