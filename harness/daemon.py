@@ -75,18 +75,17 @@ def tick(rig, ctx, transcript):
                 transcript.append(
                     dict(seat=seat, task=task["kind"], slice=task["slice"], ok=True, s=round(time.time() - t0, 1))
                 )
-            except (GuardError, ValueError, KeyError) as e:
-                rig.complete(seat, task["id"], dict(error=str(e)), state="parked")
-                transcript.append(dict(seat=seat, task=task["kind"], slice=task["slice"], ok=False, error=str(e)))
-                # A seat that could not answer (no JSON from its LLM) gets the same task again, twice at most. A guard
-                # refusal is never retried: the rig said no.
+            except Exception as e:
+                if isinstance(e, OSError):  # the endpoint or the disk is down: end the run; the supervisor reports it
+                    raise
+                error = str(e) if isinstance(e, (GuardError, ValueError, KeyError)) else f"{type(e).__name__}: {e}"
+                rig.complete(seat, task["id"], dict(error=error), state="parked")
+                transcript.append(dict(seat=seat, task=task["kind"], slice=task["slice"], ok=False, error=error))
+                # A seat that could not answer (no JSON from its LLM, or a handler that tripped on an odd reply) gets
+                # the same task again, twice at most, instead of one slice crashing the whole run. A guard refusal or
+                # a missing key is never retried: the rig said no, or the task can never work.
                 tries = task["payload"].get("attempt", 1)
-                if (
-                    isinstance(e, ValueError)
-                    and not isinstance(e, GuardError)
-                    and tries < TASK_ATTEMPTS
-                    and task["slice"]
-                ):
+                if not isinstance(e, (GuardError, KeyError)) and tries < TASK_ATTEMPTS and task["slice"]:
                     rig.queue(seat, seat, task["kind"], task["slice"], dict(task["payload"], attempt=tries + 1))
             did = True
             if (

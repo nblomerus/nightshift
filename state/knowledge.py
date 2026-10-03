@@ -19,10 +19,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import time
 
 UNDERPOWERED = "underpowered at largest design"  # agents/statistician/handler.py's park note
+LESSON_OVERLAP = 0.6  # share of the shorter lesson's words two lessons must share to count as one idea restated
 
 
 def config_id(config: dict) -> str:
@@ -33,7 +35,7 @@ class Knowledge:
     def __init__(self, path: str, rig: str):
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         self.path, self.rig = path, rig
-        self.db = sqlite3.connect(path)
+        self.db = sqlite3.connect(path, timeout=30)  # the floor server and `make reply` share this file
         self.db.executescript("""
         CREATE TABLE IF NOT EXISTS nodes(id TEXT PRIMARY KEY, type TEXT, label TEXT, props TEXT, created REAL);
         CREATE TABLE IF NOT EXISTS edges(id INTEGER PRIMARY KEY, src TEXT, dst TEXT, type TEXT, props TEXT,
@@ -221,12 +223,39 @@ class Knowledge:
             for t in self.tests(comparator)
         )
 
-    def lessons(self, limit=8) -> list[str]:
+    def lessons(self, limit=8, distinct=True) -> list[str]:
+        """The latest lessons, oldest first. With `distinct`, a lesson that restates a newer one (most of the same
+        words) is folded into it and counted, so one idea repeated every campaign cannot fill the PI's whole view."""
         q = (
             "SELECT n.label FROM nodes n JOIN edges e ON e.src = n.id AND e.type = 'FROM' WHERE n.type='lesson' "
             "AND json_extract(n.props, '$.rig') = ? ORDER BY e.ts DESC, e.id DESC LIMIT ?"
         )
-        return [r[0] for r in self.db.execute(q, (self.rig, limit))][::-1]
+        newest = [r[0] for r in self.db.execute(q, (self.rig, limit * 8 if distinct else limit))]
+        if not distinct:
+            return newest[::-1]
+        kept: list[list] = []  # [text, words, times stated], newest first
+        for text in newest:
+            words = set(re.findall(r"[a-z0-9_]{3,}", re.sub(r"^\(after campaign \d+\)\s*", "", text.lower())))
+            same = next((k for k in kept if len(words & k[1]) >= LESSON_OVERLAP * min(len(words), len(k[1]))), None)
+            if same is not None:
+                same[2] += 1
+            elif len(kept) < limit:
+                kept.append([text, words, 1])
+        return [t if n == 1 else f"{t} (stated {n} times)" for t, _, n in kept][::-1]
+
+    def runs_without_tests(self, exclude: str | None = None) -> int:
+        """Runs since the last one that tested (or stopped) any slice: how long the lab has been idle."""
+        last = self.db.execute(
+            "SELECT max(json_extract(r.props, '$.started')) FROM nodes r JOIN edges e ON e.dst = r.id AND "
+            "e.type = 'IN' JOIN nodes t ON t.id = e.src AND t.type = 'test' WHERE r.type = 'run' AND "
+            "json_extract(r.props, '$.rig') = ?",
+            (self.rig,),
+        ).fetchone()[0]
+        return self.db.execute(
+            "SELECT count(*) FROM nodes WHERE type = 'run' AND json_extract(props, '$.rig') = ? AND id != ? AND "
+            "json_extract(props, '$.started') > ?",
+            (self.rig, exclude or "", last if last is not None else -1),
+        ).fetchone()[0]
 
     def screens(self, champion: dict) -> dict[str, list[float]]:
         out: dict[str, list[float]] = {}

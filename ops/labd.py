@@ -106,7 +106,6 @@ def refresh_data(judge_config, system, log):
 
 def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idle=2, refresh=True, log=print):
     """One run of the lab and everything the supervisor checks after it. Returns 'goal' when the lab should stop."""
-    from agents.common import load_judge
     from harness.daemon import load_rigspec, run
 
     spec = load_rigspec(spec_path)
@@ -129,6 +128,20 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
         log(traceback.format_exc())
         state["seen"] = sorted(seen)
         return "crashed"
+    try:
+        return after_run(ctx, spec, name, knowledge, state, alerts, seen, max_idle, log)
+    except Exception as e:  # a failure in the supervisor's own checks must not kill it silently
+        alert(alerts, "crashed", f"checks after {name} failed: {type(e).__name__}: {e}",
+              key=f"crash:{dt.date.today()}:after:{type(e).__name__}", seen=seen)  # fmt: skip
+        log(traceback.format_exc())
+        state["seen"] = sorted(seen)
+        return "crashed"
+
+
+def after_run(ctx, spec, name, knowledge, state, alerts, seen, max_idle, log):
+    """What the supervisor checks after a run: idle streak, owner requests, stall, goal."""
+    from agents.common import load_judge
+
     tested = sum(len(c["tested"]) + len(c["parked"]) + len(c.get("stalled", [])) for c in ctx["campaigns"])
     state["idle"] = 0 if tested else state.get("idle", 0) + 1
     state["runs"] = state.get("runs", 0) + 1
@@ -148,7 +161,9 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
         pinged.update({r["id"]: r["asked"] for r in fresh})
     if state["idle"] >= max_idle:
         msg = f"{state['idle']} runs in a row tested nothing (last: {name}). The lab needs new direction or data."
-        alert(alerts, "stalled", msg, key=f"stall:{state['runs'] - state['idle']}", seen=seen)
+        msg += " The PI must now pick something; if it cannot, it files a request in the mailbox."
+        # once per stall per day: the key changes with the day, so a stall that lasts is not reported only once
+        alert(alerts, "stalled", msg, key=f"stall:{state['runs'] - state['idle']}:{dt.date.today()}", seen=seen)
     judge = load_judge(spec)
     goal = spec.get("decision_standards", {}).get("goal", {}).get("relative_wape_reduction")
     status = "running"
@@ -215,26 +230,32 @@ def main(argv=None):
     knowledge = a.knowledge or os.path.join("knowledge", f"{spec.get('rig', 'rig')}.db")
     alerts = os.path.join(os.path.dirname(knowledge), "alerts.jsonl")
     state_path = os.path.join(os.path.dirname(knowledge), "labd_state.json")
-    state = {}
-    if os.path.exists(state_path):
-        with open(state_path) as f:
-            state = json.load(f)
+    state = load_state(state_path, alerts)
+    if state.get("status") == "running":  # the last process died mid-run (killed, reloaded, power lost)
+        print(f"resumed after an unclean exit during {state.get('last_run', 'a run')}", flush=True)
+    watchdog(alerts)
     llm = openai_compatible_llm(
         os.environ["LLM_BASE_URL"],
         os.environ["REASONING_MODEL"],
         os.environ.get("UTILITY_MODEL", os.environ["REASONING_MODEL"]),
         os.environ.get("LLM_API_KEY", "none"),
     )
+    llm = beating(llm)
     while True:
         t0 = time.time()
+        beat()
         state.update(last_start=t0, every=a.every, status="running")
-        with open(state_path, "w") as f:
-            json.dump(state, f, indent=1, default=str)
-        status = cycle(llm, a.rigspec, knowledge, a.runs_dir, a.campaigns, state, alerts, a.max_idle)
-        state["status"] = "waiting" if status != "goal" else "goal reached"
-        maybe_digest(state, alerts, REPO_ROOT, spec.get("rig", "rig"))
-        with open(state_path, "w") as f:
-            json.dump(state, f, indent=1, default=str)
+        save_state(state_path, state)
+        try:
+            status = cycle(llm, a.rigspec, knowledge, a.runs_dir, a.campaigns, state, alerts, a.max_idle)
+            state["status"] = "waiting" if status != "goal" else "goal reached"
+            maybe_digest(state, alerts, REPO_ROOT, spec.get("rig", "rig"))
+        except Exception as e:  # last line of defence: report, then keep the schedule
+            status = "crashed"
+            state["status"] = "waiting"
+            alert(alerts, "crashed", f"supervisor: {type(e).__name__}: {e}")
+            traceback.print_exc()
+        save_state(state_path, state)
         if status == "goal":
             print("goal reached: the lab stops", flush=True)
             return 0
@@ -247,7 +268,67 @@ def wait_until(t, nap=60.0):
     """Sleep until wall-clock time `t`. macOS pauses `time.sleep` while the machine sleeps, so one long sleep would
     push the next run back by however long the lid was shut; short naps re-read the clock."""
     while (left := t - time.time()) > 0:
+        beat()
         time.sleep(min(nap, left))
+
+
+def save_state(path, state):
+    """Write the supervisor's state atomically: a kill mid-write must not leave a truncated file."""
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(state, f, indent=1, default=str)
+    os.replace(tmp, path)
+
+
+def load_state(path, alerts):
+    """The saved state, or a fresh one if it is unreadable (the bad file is kept beside it, and reported)."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError) as e:
+        os.replace(path, path + ".corrupt")
+        alert(alerts, "crashed", f"supervisor state unreadable ({type(e).__name__}); starting fresh, kept as .corrupt")
+        return {}
+
+
+# Watchdog: a live process that stops making progress (a wedged call, a deadlock) is not restarted by launchd, which
+# only restarts a process that exits. Every LLM call and every nap beats; if no beat comes for WATCHDOG_S of *awake*
+# time, the process reports and exits non-zero, and launchd starts it again. time.monotonic() does not advance while
+# the Mac sleeps, so a closed lid never looks like a hang.
+WATCHDOG_S = 2 * 3600
+_BEAT = [time.monotonic()]
+
+
+def beat():
+    _BEAT[0] = time.monotonic()
+
+
+def beating(llm):
+    import functools
+
+    @functools.wraps(llm)  # keeps the signature visible: the call recorder streams only if it sees on_progress
+    def call(*a, **k):
+        try:
+            return llm(*a, **k)
+        finally:
+            beat()
+
+    return call
+
+
+def watchdog(alerts, limit=WATCHDOG_S, every=60.0, exit=os._exit):
+    import threading
+
+    def loop():
+        while True:
+            time.sleep(every)
+            if time.monotonic() - _BEAT[0] > limit:
+                alert(alerts, "hung", f"no progress for {limit / 3600:.0f} h of awake time; restarting the supervisor")
+                exit(3)
+
+    threading.Thread(target=loop, daemon=True, name="labd-watchdog").start()
 
 
 def launchd_plist(every):

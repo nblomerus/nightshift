@@ -38,3 +38,36 @@ def test_a_slice_that_cannot_finish_is_recorded_as_stalled(tmp_path):
     assert reviews == 3  # the first try and two retries
     recorded = {t["slice"]: t for t in Knowledge(kg_path, "forecast-lab").tests()}
     assert recorded[stalled[0]]["stage"] == "design_review" and "stalled" in recorded[stalled[0]]["reason"]
+
+
+def test_a_handler_that_trips_on_an_odd_reply_parks_its_task_instead_of_crashing_the_run(tmp_path):
+    from harness import daemon
+
+    calls = [0]
+    real = daemon.S.HANDLERS["review_design"]
+
+    def flaky(rig, seat, task, ctx):
+        calls[0] += 1
+        if calls[0] == 1:
+            raise TypeError("'NoneType' object is not subscriptable")  # e.g. a field the model left out
+        return real(rig, seat, task, ctx)
+
+    daemon.S.HANDLERS["review_design"] = flaky
+    try:
+        rig, ctx, transcript = run(fake_llm, root=str(tmp_path / "r"), n_campaigns=1)
+    finally:
+        daemon.S.HANDLERS["review_design"] = real
+    assert any(not t["ok"] and t["error"].startswith("TypeError") for t in transcript)
+    assert all(st in ("written", "parked") for _, st in rig.db.execute("SELECT id, stage FROM slices"))  # retried
+
+
+def test_a_network_failure_still_ends_the_run_so_the_supervisor_reports_it(tmp_path):
+    import pytest
+
+    def down(prompt, system=None, tier=None):
+        if "critic@" in (system or ""):
+            raise TimeoutError("The read operation timed out")
+        return fake_llm(prompt, system, tier)
+
+    with pytest.raises(TimeoutError):
+        run(down, root=str(tmp_path / "r"), n_campaigns=1)

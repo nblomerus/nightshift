@@ -63,7 +63,7 @@ def slice_details(root, sid):
 
 
 def build_state(root, since=0.0):
-    db = sqlite3.connect(os.path.join(root, "rig.db"))
+    db = sqlite3.connect(os.path.join(root, "rig.db"), timeout=30)
     ev = []
     for i, ts, frm, to, body, sl in db.execute(
         "SELECT id, ts, frm, to_seat, body, slice FROM messages WHERE ts>?", (since,)
