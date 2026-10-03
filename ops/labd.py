@@ -133,14 +133,19 @@ def cycle(llm, spec_path, knowledge, runs_dir, campaigns, state, alerts, max_idl
     state["idle"] = 0 if tested else state.get("idle", 0) + 1
     state["runs"] = state.get("runs", 0) + 1
     log(f"{name}: {tested} slice(s) tested or stopped; idle streak {state['idle']}")
-    # One "needs you" ping a day while requests are open with the owner, however the PI words them.
-    reqs = ctx.get("external_requests", [])
-    if reqs and time.time() - state.get("last_data_ping", 0) >= DATA_PING_EVERY:
-        msg = "The PI asks: " + reqs[-1]["request"]
-        if len(reqs) > 1:
-            msg += f" (asked {len(reqs)} times this run)"
+    # "Needs you": at most one ping a day, for open requests asked since the last ping. Read from the knowledge graph,
+    # not from this run, so a request asked inside the cooldown is pinged once the cooldown ends, although the PI
+    # (rightly) does not ask again while it is open.
+    from state.knowledge import Knowledge
+
+    pinged = state.setdefault("pinged_requests", {})  # request id -> the ask it was pinged for
+    open_requests = Knowledge(knowledge, spec.get("rig", "rig")).requests("open")
+    fresh = [r for r in open_requests if pinged.get(r["id"]) != r["asked"]]
+    if fresh and time.time() - state.get("last_data_ping", 0) >= DATA_PING_EVERY:
+        msg = "The PI asks: " + fresh[0]["what"] + (f" (+{len(fresh) - 1} more open)" if len(fresh) > 1 else "")
         alert(alerts, "needs you", msg + " | Open the mailbox on the lab floor (make ui) or run: make requests")
         state["last_data_ping"] = time.time()
+        pinged.update({r["id"]: r["asked"] for r in fresh})
     if state["idle"] >= max_idle:
         msg = f"{state['idle']} runs in a row tested nothing (last: {name}). The lab needs new direction or data."
         alert(alerts, "stalled", msg, key=f"stall:{state['runs'] - state['idle']}", seen=seen)
