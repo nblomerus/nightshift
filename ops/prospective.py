@@ -215,6 +215,36 @@ def commit_and_push(worktree, repo_root, rel_paths, message, run=None):
     return True, None
 
 
+def sync(worktree, repo_root, message, run=None):
+    """Commit anything uncommitted under forecasts/ and scores/ in the prospective worktree, then push the branch if
+    origin lacks any of its prospective commits -- only as the repo owner (see commit_and_push). Called at the end of
+    every tick, so a commit or push that failed once (a git lock, the wrong gh account, no network) is retried next
+    hour instead of being lost. Returns `(pushed, reason)`; raises LockError only if a commit fails."""
+    dirs = [
+        d for d in ("forecasts", "scores") if os.path.isdir(os.path.join(worktree, d))
+    ]  # git add fails on a missing one
+    pending = _run_git(run, ["status", "--porcelain", "--", *dirs], worktree) if dirs else None
+    if pending is not None and (pending.stdout or "").strip():
+        _run_git(run, ["add", "--", *dirs], worktree)
+        committed = _run_git(run, ["commit", "-m", message], worktree)
+        if committed.returncode != 0 and "nothing to commit" not in (committed.stdout + committed.stderr):
+            raise LockError(f"git commit failed: {committed.stderr or committed.stdout}")
+    has_remote = _run_git(run, ["rev-parse", "--verify", "-q", "refs/remotes/origin/prospective"], worktree)
+    if has_remote.returncode == 0:
+        ahead = _run_git(run, ["rev-list", "--count", "origin/prospective..HEAD"], worktree).stdout.strip()
+        if ahead in ("", "0"):
+            return False, None  # nothing origin lacks
+    elif not _run_git(run, ["log", "-1", "--format=%H", "--", "forecasts", "scores"], worktree).stdout.strip():
+        return False, None  # no prospective commit yet: nothing worth publishing
+    login, owner = gh_login(run), repo_owner(repo_root, run)
+    if not login or not owner or login != owner:
+        return False, f"gh is logged in as {login!r}, not the repo owner {owner!r}"
+    pushed = _run_git(run, ["push", "origin", "prospective"], worktree)
+    if pushed.returncode != 0:
+        return False, f"git push failed: {pushed.stderr or pushed.stdout}"
+    return True, None
+
+
 # ---------------------------------------------------------------------------- lock / score
 def lock(system, out_root, champion, now=None, challengers=()):
     """Forecast month L+2 from everything published so far, for `champion` (a full config dict -- see
@@ -363,7 +393,10 @@ def cumulative(system, out_root, scores_root, sesoi, n_boot=2000):
 
 
 # ---------------------------------------------------------------------------- automatic supervisor entry point
-def tick(system, repo_root, knowledge_path, rig, alert, log, now=None):
+FIRST_LOCK_MONTH = "202611"  # the first month the automated lock could make; earlier months were never lockable here
+
+
+def tick(system, repo_root, knowledge_path, rig, alert, log, now=None, first_month=FIRST_LOCK_MONTH):
     """One supervisor cycle (ops/labd.py calls this once an hour, inside its own try/except): lock month L+2 once
     its window opens, flag a window that closed with nothing locked, and score every locked month whose target has
     since published. `alert(kind, message, key=None)` records an owner alert (deduped by key); `log(str)` logs.
@@ -407,24 +440,16 @@ def tick(system, repo_root, knowledge_path, rig, alert, log, now=None):
                 else []
             )
             lock(system, forecasts_root, champion, now=now, challengers=leads)
-            pushed, reason = commit_and_push(
-                worktree,
-                repo_root,
-                [os.path.join("forecasts", system, target)],
-                f"Lock {system} {target} prospective forecasts",
-            )
-            if not pushed:
-                alert("not pushed", f"lock {system} {target}: {reason}", key=f"not-pushed:lock:{system}:{target}")
             alert("locked", f"{system} {target}: champion {describe_config(bj, champion)}, {len(leads)} challenger(s)")
             log(f"prospective: locked {system} {target}")
             out["locked"] = target
             locked.add(target)
         except LockError as e:
-            alert("not pushed", f"lock {system} {target} failed: {e}", key=f"lock-failed:{system}:{target}")
+            alert("lock failed", f"lock {system} {target} failed: {e}", key=f"lock-failed:{system}:{target}")
 
     for published_month, published_at in manifest_published.items():
         m = bj.month_add(published_month, 2)
-        if m in locked or now < month_start_utc(m):
+        if m < first_month or m in locked or now < month_start_utc(m):
             continue
         if _parse_ts(published_at) < month_start_utc(m):
             alert("missed lock", f"{system} {m}: window closed with no lock on file", key=f"missed-lock:{system}:{m}")
@@ -436,16 +461,8 @@ def tick(system, repo_root, knowledge_path, rig, alert, log, now=None):
         try:
             r = score(system, m, forecasts_root, scores_root, sesoi=sesoi)
         except LockError as e:
-            alert("not pushed", f"score {system} {m} failed: {e}", key=f"score-failed:{system}:{m}")
+            alert("score failed", f"score {system} {m} failed: {e}", key=f"score-failed:{system}:{m}")
             continue
-        pushed, reason = commit_and_push(
-            worktree,
-            repo_root,
-            [os.path.join("scores", system, f"{m}.json"), os.path.join("scores", system, "cumulative.json")],
-            f"Score {system} {m}",
-        )
-        if not pushed:
-            alert("not pushed", f"score {system} {m}: {reason}", key=f"not-pushed:score:{system}:{m}")
         msg = (f"{system} {m}: champion WAPE {r['wape_champion']:.3f} vs baseline {r['wape_baseline']:.3f}, "
                f"cumulative {r['cumulative']['decision']}")  # fmt: skip
         if r["judge_changed"]:
@@ -453,6 +470,16 @@ def tick(system, repo_root, knowledge_path, rig, alert, log, now=None):
         alert("scored", msg)
         log(f"prospective: scored {system} {m}")
         out["scored"].append(m)
+    done = [f"lock {out['locked']}"] if out["locked"] else []
+    done += [f"score {m}" for m in out["scored"]]
+    try:  # commit and publish whatever is pending, this tick's work or an earlier tick's that failed to land
+        pushed, reason = sync(worktree, repo_root, f"Prospective {system}: " + (", ".join(done) or "pending files"))
+        if reason:
+            alert("not pushed", f"prospective {system}: {reason}", key=f"not-pushed:{system}:{dt.date.today()}")
+        out["pushed"] = pushed
+    except Exception as e:  # never raise out of tick: the files stay, and the next tick retries the commit
+        alert("not pushed", f"prospective {system}: commit failed, will retry: {e}",
+              key=f"commit:{system}:{dt.date.today()}")  # fmt: skip
     return out
 
 

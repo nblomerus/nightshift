@@ -238,9 +238,10 @@ def test_tick_locks_a_newly_eligible_month_exactly_once_and_is_idempotent(lab, m
     events, alert = alert_log()
     kg_path = str(lab["repo"] / "knowledge" / "bikeshare-lab.db")
     out = pr.tick("chi", str(lab["repo"]), kg_path, "bikeshare-lab", alert, lambda s: None, now=BEFORE)
-    # every long-past month was lockable and never locked (the lab never ran this before); 202510's own window is
-    # still open, so it is locked, not missed
-    assert out["locked"] == "202510" and out["scored"] == [] and "202510" not in out["missed"]
+    # 202510's window is still open, so it is locked, not missed; months before the automation existed are never
+    # reported as missed (the default floor is FIRST_LOCK_MONTH), so a first tick does not flood the owner
+    assert out["locked"] == "202510" and out["scored"] == [] and out["missed"] == []
+    assert not any(kind == "missed lock" for kind, _, _ in events)
     worktree = pr.prospective_worktree_path(str(lab["repo"]))
     assert os.path.exists(os.path.join(worktree, "forecasts", "chi", "202510", "lock.json"))
     assert any(kind == "locked" for kind, _, _ in events)
@@ -257,13 +258,15 @@ def test_tick_alerts_missed_lock_once_the_window_has_closed_with_nothing_locked(
     events, alert = alert_log()
     kg_path = str(lab["repo"] / "knowledge" / "bikeshare-lab.db")
     after_close = dt.datetime(2025, 10, 2, tzinfo=dt.UTC)  # 202510's window closed 2025-10-01 with nothing locked
-    out = pr.tick("chi", str(lab["repo"]), kg_path, "bikeshare-lab", alert, lambda s: None, now=after_close)
+    out = pr.tick("chi", str(lab["repo"]), kg_path, "bikeshare-lab", alert, lambda s: None, now=after_close,
+                  first_month="202501")  # fmt: skip
     assert out["locked"] is None and "202510" in out["missed"]
     missed = [(kind, message, key) for kind, message, key in events if kind == "missed lock"]
     assert any(key == "missed-lock:chi:202510" for _, _, key in missed)
     # the same month is reported again next time (dedup by key is the caller alert()'s own job, not tick's)
     events.clear()
-    out2 = pr.tick("chi", str(lab["repo"]), kg_path, "bikeshare-lab", alert, lambda s: None, now=after_close)
+    out2 = pr.tick("chi", str(lab["repo"]), kg_path, "bikeshare-lab", alert, lambda s: None, now=after_close,
+                   first_month="202501")  # fmt: skip
     assert "202510" in out2["missed"]
     assert any(key == "missed-lock:chi:202510" for _, _, key in events if events)
 
@@ -319,3 +322,39 @@ def test_commit_and_push_pushes_only_when_gh_login_matches_the_repo_owner(lab):
         worktree, str(lab["repo"]), ["forecasts/y.json"], "add y", run=fake_gh("mallory").run
     )
     assert not pushed2 and "mallory" in reason2 and "nblomerus" in reason2
+
+
+def test_a_commit_that_fails_once_lands_on_the_next_tick(lab, monkeypatch):
+    real = fake_gh("nblomerus")
+    failed = []
+
+    def run(args, **kwargs):
+        if args[:2] == ["git", "commit"] and not failed:
+            failed.append(args)
+            return subprocess.CompletedProcess(args, 1, stdout="", stderr="fatal: Unable to create index.lock")
+        return real.run(args, **kwargs)
+
+    monkeypatch.setattr(pr, "subprocess", types.SimpleNamespace(run=run, CompletedProcess=subprocess.CompletedProcess))
+    events, alert = alert_log()
+    kg_path = str(lab["repo"] / "knowledge" / "bikeshare-lab.db")
+    out = pr.tick("chi", str(lab["repo"]), kg_path, "bikeshare-lab", alert, lambda s: None, now=BEFORE)
+    assert out["locked"] == "202510" and any("commit failed" in m for k, m, _ in events if k == "not pushed")
+    out2 = pr.tick("chi", str(lab["repo"]), kg_path, "bikeshare-lab", alert, lambda s: None, now=BEFORE)
+    assert out2["locked"] is None and out2["pushed"]  # nothing new to lock, but the pending lock is committed and pushed
+    heads = subprocess.run(["git", "ls-remote", "--heads", str(lab["origin"]), "prospective"], capture_output=True,
+                           text=True).stdout  # fmt: skip
+    assert heads.strip()
+
+
+def test_a_push_skipped_for_the_wrong_account_goes_out_once_the_owner_is_logged_in(lab, monkeypatch):
+    events, alert = alert_log()
+    kg_path = str(lab["repo"] / "knowledge" / "bikeshare-lab.db")
+    monkeypatch.setattr(pr, "subprocess", fake_gh("someone-else"))
+    assert (
+        pr.tick("chi", str(lab["repo"]), kg_path, "bikeshare-lab", alert, lambda s: None, now=BEFORE)["pushed"] is False
+    )
+    monkeypatch.setattr(pr, "subprocess", fake_gh("nblomerus"))
+    assert pr.tick("chi", str(lab["repo"]), kg_path, "bikeshare-lab", alert, lambda s: None, now=BEFORE)["pushed"]
+    assert (
+        pr.tick("chi", str(lab["repo"]), kg_path, "bikeshare-lab", alert, lambda s: None, now=BEFORE)["pushed"] is False
+    )
