@@ -325,8 +325,9 @@ def watchdog(alerts, limit=WATCHDOG_S, every=60.0, exit=os._exit):
         while True:
             time.sleep(every)
             if time.monotonic() - _BEAT[0] > limit:
-                alert(alerts, "hung", f"no progress for {limit / 3600:.0f} h of awake time; restarting the supervisor")
+                alert(alerts, "hung", f"no progress for {limit / 3600:.1f} h of awake time; restarting the supervisor")
                 exit(3)
+                return  # one alert per hang: if exit() did not end the process (tests), the watchdog still stops
 
     threading.Thread(target=loop, daemon=True, name="labd-watchdog").start()
 
