@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from agents.pi import handler as pi_handler
 from harness.daemon import load_rigspec
 from harness.fake_llm import make_fake_llm
 from judges import bikeshare as bj
@@ -55,12 +56,35 @@ def go(spec_dir, tmp_path, llm, state, goal=0.15):
                       state, str(tmp_path / "alerts.jsonl"), max_idle=2, refresh=False, log=lambda *_: None)  # fmt: skip
 
 
-def test_a_stall_pings_once(spec_dir, tmp_path):
+def test_a_pi_that_plans_nothing_is_not_allowed_to_stall_the_lab(spec_dir, tmp_path):
+    asked, base = [], pi({"picks": [], "lesson": "nothing is worth testing"})
+
+    def idle(prompt, system=None, tier=None):
+        if "pi@" in (system or "") and "Pick up to TWO" in prompt:
+            asked.append(prompt)
+        return base(prompt, system, tier)
+
+    state, streak = {}, []
+    for _ in range(3):
+        assert go(spec_dir, tmp_path, idle, state) == "running"
+        streak.append(state["idle"])
+    assert streak == [1, 0, 1]  # after an idle run the next one must test something, and does
+    assert "MUST pick at least one" in asked[1] and asked[2].endswith(pi_handler.STALL_RETRY)  # told, then asked again
+    assert "If nothing is worth testing, pick none" in asked[0]  # an empty plan is fine while the lab is not idle
+
+
+def test_with_nothing_left_to_try_the_lab_asks_the_owner_and_reports_the_stall_daily(spec_dir, tmp_path, monkeypatch):
+    from state.knowledge import Knowledge
+
+    monkeypatch.setattr(bj, "MENU", {})  # nothing listed, and the PI proposes no new idea
     idle, state = pi({"picks": [], "lesson": "nothing"}), {}
     for _ in range(3):
         assert go(spec_dir, tmp_path, idle, state) == "running"
-    stalls = [a for a in alerts(tmp_path) if a["kind"] == "stalled"]
-    assert state["idle"] == 3 and len(stalls) == 1
+    kinds = [a["kind"] for a in alerts(tmp_path)]
+    assert state["idle"] == 3 and kinds.count("stalled") == 1  # the same stall, the same day: one ping
+    (req,) = Knowledge(str(tmp_path / "kg.db"), load_rigspec("rigs/bikeshare-lab.json")["rig"]).requests("open")
+    assert req["what"].startswith("Direction") and req["asks"] == 2  # filed by the circuit breaker, then re-asked
+    assert kinds.count("needs you") == 1
 
 
 def test_a_request_to_the_owner_pings_once_a_day_however_it_is_worded(spec_dir, tmp_path):
@@ -198,3 +222,72 @@ def test_a_request_asked_inside_the_cooldown_is_pinged_when_it_ends(spec_dir, tm
     state["last_data_ping"] -= labd.DATA_PING_EVERY  # and it is not pinged again unless asked again
     go(spec_dir, tmp_path, pi({"picks": [], "lesson": "l"}), state)
     assert len([a for a in alerts(tmp_path) if a["kind"] == "needs you"]) == 1
+
+
+def test_a_failure_after_the_run_is_reported_not_fatal(spec_dir, tmp_path, monkeypatch):
+    def broken(*a, **k):
+        raise RuntimeError("goal check broke")
+
+    monkeypatch.setattr(labd, "goal_status", broken)
+    assert go(spec_dir, tmp_path, pi({"picks": [], "lesson": "l"}), {}) == "crashed"
+    (a,) = [a for a in alerts(tmp_path) if a["kind"] == "crashed"]
+    assert "goal check broke" in a["message"]
+
+
+def test_the_state_file_is_written_atomically_and_a_corrupt_one_is_set_aside(tmp_path):
+    path, al = str(tmp_path / "labd_state.json"), str(tmp_path / "alerts.jsonl")
+    labd.save_state(path, {"runs": 3})
+    assert labd.load_state(path, al) == {"runs": 3} and not (tmp_path / "labd_state.json.tmp").exists()
+    (tmp_path / "labd_state.json").write_text('{"runs": 3, "idl')  # killed mid-write by an older version
+    assert labd.load_state(path, al) == {}
+    assert (tmp_path / "labd_state.json.corrupt").exists() and alerts(tmp_path)[-1]["kind"] == "crashed"
+
+
+def test_the_watchdog_restarts_a_process_that_stops_making_progress(tmp_path, monkeypatch):
+    import threading
+
+    exited = threading.Event()
+    monkeypatch.setattr(labd, "_BEAT", [labd.time.monotonic() - 10])  # last progress 10 s ago
+    labd.watchdog(str(tmp_path / "alerts.jsonl"), limit=5, every=0.01, exit=lambda code: exited.set())
+    assert exited.wait(2) and alerts(tmp_path)[-1]["kind"] == "hung"
+
+
+def test_the_heartbeat_wrapper_keeps_the_llms_streaming_signature():
+    import inspect
+
+    def llm(prompt, system=None, tier=None, on_progress=None):
+        return "ok"
+
+    before = labd._BEAT[0]
+    wrapped = labd.beating(llm)
+    assert "on_progress" in inspect.signature(wrapped).parameters and wrapped("p") == "ok"
+    assert labd._BEAT[0] >= before
+
+
+def test_a_trickling_stream_cannot_outlive_its_deadline():
+    import time as _time
+
+    from harness.llm import read_stream
+
+    lines = (b'data: {"choices": [{"delta": {"content": "x"}}]}' for _ in range(10**6))
+    with pytest.raises(TimeoutError):
+        read_stream(lines, deadline=_time.monotonic() - 1)
+
+
+def test_restated_lessons_fold_into_one_and_idle_runs_are_counted(tmp_path):
+    from state.knowledge import Knowledge
+
+    kg = Knowledge(str(tmp_path / "kg.db"), "lab")
+    r1 = kg.begin_run("r1", "j", started=1.0)
+    for k in range(6):
+        kg.lesson(r1, k, f"(after campaign {k}) Non-positive exploratory screens remain a hard gate for listed changes "
+                         f"variant {k}")  # fmt: skip
+    kg.lesson(r1, 7, "Composite features of tight positive results are worth a confirmatory slot")
+    ls = kg.lessons(8)
+    assert len(ls) == 2 and ls[0].endswith("(stated 6 times)") and ls[1].startswith("Composite")
+    assert len(kg.lessons(8, distinct=False)) == 7
+    assert kg.runs_without_tests() == 1  # r1 tested nothing
+    kg.test(r1, 1, "S1", change="x", change_desc="x", treatment={"a": 1}, comparator={}, comparator_desc="b",
+            judge="j", data_key="k", design="B", decision=None, grade=None, stage="parked")  # fmt: skip
+    r2 = kg.begin_run("r2", "j", started=2.0)
+    assert kg.runs_without_tests() == 1 and kg.runs_without_tests(exclude=r2) == 0

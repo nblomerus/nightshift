@@ -29,7 +29,7 @@ class Rig:
     def __init__(self, root: str, spec: dict):
         self.root, self.spec = root, spec
         os.makedirs(root, exist_ok=True)
-        self.db = sqlite3.connect(os.path.join(root, "rig.db"))
+        self.db = sqlite3.connect(os.path.join(root, "rig.db"), timeout=30)  # wait out a reader (the floor server)
         self.db.executescript("""
         CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, ts REAL, frm TEXT, to_seat TEXT,
             body TEXT, slice TEXT, reply_to INTEGER, read INTEGER DEFAULT 0);

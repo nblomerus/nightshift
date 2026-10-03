@@ -84,6 +84,22 @@ accumulates by itself (the censoring mask). The supervisor waits by the wall clo
 next run when it wakes, and a digest missed overnight goes out the next morning. The goal lives in the rigspec's
 decision standards.
 
+
+**Never stuck (0.25.0).** Every way the lab can stop making progress is either recovered automatically or put to the
+owner:
+- *An empty plan.* Once a run has tested nothing, the PI is told how many runs it has been idle and may not plan
+  nothing; an empty reply is asked again once, then the listed change with the best screen is tested; with nothing
+  listed, the PI files a "Direction" request in the mailbox (pinged, and re-asked each idle run). Screens under +1 % no
+  longer count as positive, and lessons that restate one another are folded into one ("stated N times").
+- *A crash.* A handler that trips on an odd reply parks that task and retries it (twice), instead of ending the run; a
+  network or disk error still ends the run and is reported. Anything that fails after a run, or in the supervisor's
+  own loop, is reported and the schedule continues.
+- *A hang.* Each LLM call has a wall-clock deadline (30 min) besides its per-read timeout; a watchdog exits the
+  process after 2 h of awake time without progress, and launchd starts it again.
+- *Corruption.* The supervisor's state is written atomically; an unreadable state file is set aside and reported.
+  SQLite connections wait up to 30 s for a reader instead of failing.
+- *Silence.* A stall is reported once a day while it lasts; every open request is pinged once; a supported result
+  that cannot get a second replication (no fresh months) is put to the owner.
 ## Knowledge graph (state/knowledge.py)
 The lab's memory across runs, one SQLite graph per rig (`knowledge/<rig>.db`, gitignored). After every campaign
 the daemon records the kernel's records: each test (change, champion, judge digest, data key, design, decision,

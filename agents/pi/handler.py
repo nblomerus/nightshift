@@ -47,10 +47,11 @@ def pi_plan(rig, seat, task, ctx):
     new_ideas = hasattr(J, "check_code")  # the judge can run seat-written code
     msgs = rig.inbox(seat)
     notes = "\n".join(f"- from {m['frm']}: {m['body'][:300]}" for m in msgs) or "(none)"
-    out = ask_json(
-        ctx["llm"],
-        rig.spec["seats"][seat],
-        persona(rig, seat),
+    # Circuit breaker: once a run has tested nothing, an empty plan is not accepted (an empty plan teaches the lab
+    # nothing and, with an unchanged brief, repeats every hour). This decides only what to attempt, never what counts.
+    idle = kg.runs_without_tests(exclude=ctx.get("run_id")) if kg is not None else 0
+    promising = [k for k, v in ctx["screen"].items() if k in menu and v >= SCREEN_MIN]
+    prompt = (
         f"Campaign {ctx['campaign']} of {ctx['n_campaigns']}. Current champion: {ctx['champion_desc']}.\n\n"
         f"Untested or unsettled changes (key: description):\n"
         + "\n".join(f"- {k}: {v[0]}" for k, v in menu.items())
@@ -72,7 +73,7 @@ def pi_plan(rig, seat, task, ctx):
             + (
                 "None of the listed changes has a positive screen: a well-reasoned new idea is how the lab keeps "
                 "learning now. "
-                if not any(v > 0 for k, v in ctx["screen"].items() if k in menu)
+                if not promising
                 else ""
             )
             if new_ideas
@@ -80,8 +81,15 @@ def pi_plan(rig, seat, task, ctx):
         )
         + "Pick up to TWO changes in all to test confirmatorily this campaign: listed changes"
         + (" and at most one new idea. " if new_ideas else ". ")
-        + "Do not pick changes already graded A. If nothing is worth testing, pick none. Also state one lesson the lab "
-        "should carry forward. "
+        + "Do not pick changes already graded A. "
+        + (
+            f"The lab has tested nothing in its last {idle} run(s). An empty plan teaches it nothing, so this campaign "
+            "you MUST pick at least one: a listed change, or a new idea (for example one that combines the strongest "
+            "earlier results into several columns). "
+            if idle
+            else "If nothing is worth testing, pick none. "
+        )
+        + "Also state one lesson the lab should carry forward. "
         + (
             "What the lab can and cannot get (fixed by the owner; do not ask for anything ruled out here):\n"
             + "\n".join(f"- {n}" for n in rig.spec["data_notes"])
@@ -96,33 +104,26 @@ def pi_plan(rig, seat, task, ctx):
         'expect", "how": "where it can be obtained (source, URL, format) and how it should reach the lab", "done": '
         '"how the owner will know it is delivered"}. Otherwise ask_owner is null. The owner is notified, answers '
         "later, and the answer appears in your brief; keep testing what the available data allows meanwhile. "
-        'Reply JSON: {"picks": [{"key": "...", "rationale": "..."}], "lesson": "...", "ask_owner": null}',
+        'Reply JSON: {"picks": [{"key": "...", "rationale": "..."}], "lesson": "...", "ask_owner": null}'
     )
-    picks, dropped = [], []
-    for p in out.get("picks", []):
-        if not isinstance(p, dict):
-            continue
-        if p.get("key") in menu:
-            picks.append(p)
-        elif p.get("key") == "new" and new_ideas:
-            name = re.sub(r"[^a-z0-9_]+", "_", str(p.get("name", "")).lower()).strip("_")[:40]
-            key = f"code:{name}"
-            idea = str(p.get("idea") or p.get("rationale") or "").strip()  # models sometimes describe it in rationale
-            decided = kg is not None and any(
-                t["change"] == key and t["decision"] and t["champion"] == kg_champion(ctx) for t in kg.tests()
-            )
-            if any(q["key"].startswith("code:") for q in picks):
-                dropped.append(f"{key}: only one new idea per campaign")
-            elif len(name) < 3 or not idea:
-                dropped.append(f"new idea {p.get('name')!r}: needs a name and a description")
-            elif decided:
-                dropped.append(f"{key}: already decided against this champion")
-            else:
-                ctx["ideas"][key] = dict(name=name, idea=idea[:600])
-                picks.append(dict(p, key=key))
-        else:
-            dropped.append(f"{p.get('key')!r}: not available this campaign")
-    dropped += [f"{p['key']}: more than two picks" for p in picks[2:]]
+    out = ask_json(ctx["llm"], rig.spec["seats"][seat], persona(rig, seat), prompt)
+    picks, dropped = take_picks(out, menu, new_ideas, kg, ctx)
+    if not picks and idle:  # stalled and still empty: ask once more, then fall back deterministically
+        again = ask_json(ctx["llm"], rig.spec["seats"][seat], persona(rig, seat), prompt + STALL_RETRY)
+        picks, more = take_picks(again, menu, new_ideas, kg, ctx)
+        dropped += more
+        out = {**out, **{k: v for k, v in again.items() if v}}
+    if not picks and idle and menu:
+        best = max(menu, key=lambda k: ctx["screen"].get(k, float("-inf")))
+        picks = [dict(key=best, rationale=f"Fallback: the lab tested nothing in its last {idle} run(s) and the PI "
+                      "picked nothing twice, so the listed change with the best exploratory screen is tested.")]  # fmt: skip
+    if not picks and idle and not owner_ask(out.get("ask_owner")):
+        out["ask_owner"] = dict(
+            what="Direction: the lab is stalled, with nothing left on its menu and no new idea from the PI.",
+            why=f"It has tested nothing in its last {idle} run(s); a direction or new data would restart it.",
+            how='Answer here (make reply REQUEST=<id> MSG="..."), e.g. a family of features to try next.',
+            done="The lab tests something again.",
+        )
     picks = picks[:2]
     if dropped:  # never silently: the PI (and the record) sees why a pick was not taken
         rig.send(seat, seat, "Picks not taken: " + "; ".join(dropped))
@@ -150,6 +151,43 @@ def pi_plan(rig, seat, task, ctx):
             seat, rig.seat_for("methodologist"), "draft_prereg", sid, dict(key=key, rationale=p.get("rationale", ""))
         )
     return dict(picks=[p["key"] for p in picks], lesson=out.get("lesson"))
+
+
+SCREEN_MIN = 0.01  # an exploratory screen below +1 % is noise, not a reason to skip proposing a new idea
+STALL_RETRY = (
+    "\n\nYour reply picked nothing. The lab is stalled, so an empty plan is not accepted: reply again with at least "
+    "one pick (a listed change or a new idea)."
+)
+
+
+def take_picks(out, menu, new_ideas, kg, ctx):
+    """The PI's valid picks (at most two) and why the others were dropped."""
+    picks, dropped = [], []
+    for p in out.get("picks", []) or []:
+        if not isinstance(p, dict):
+            continue
+        if p.get("key") in menu:
+            picks.append(p)
+        elif p.get("key") == "new" and new_ideas:
+            name = re.sub(r"[^a-z0-9_]+", "_", str(p.get("name", "")).lower()).strip("_")[:40]
+            key = f"code:{name}"
+            idea = str(p.get("idea") or p.get("rationale") or "").strip()  # models sometimes describe it in rationale
+            decided = kg is not None and any(
+                t["change"] == key and t["decision"] and t["champion"] == kg_champion(ctx) for t in kg.tests()
+            )
+            if any(q["key"].startswith("code:") for q in picks):
+                dropped.append(f"{key}: only one new idea per campaign")
+            elif len(name) < 3 or not idea:
+                dropped.append(f"new idea {p.get('name')!r}: needs a name and a description")
+            elif decided:
+                dropped.append(f"{key}: already decided against this champion")
+            else:
+                ctx["ideas"][key] = dict(name=name, idea=idea[:600])
+                picks.append(dict(p, key=key))
+        else:
+            dropped.append(f"{p.get('key')!r}: not available this campaign")
+    dropped += [f"{p['key']}: more than two picks" for p in picks[2:]]
+    return picks[:2], dropped
 
 
 def owner_ask(raw):

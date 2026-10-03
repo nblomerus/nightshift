@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.request
 
 
@@ -25,13 +26,17 @@ def openai_compatible_llm(
     max_tokens: int = 16000,
     timeout: int = 600,
     stream: bool = True,
+    deadline: int = 1800,
 ):
     """Any OpenAI-compatible chat endpoint: a local vLLM / SGLang / Ollama server or a hosted API.
     Reasoning models spend tokens thinking, so keep ``max_tokens`` generous: 4k was too small, and at 8k DeepSeek's
     reasoner sometimes spent it all thinking and returned an empty reply.
 
     With ``stream`` the reply arrives as server-sent chunks; ``on_progress(reasoning_so_far, content_so_far)`` is called
-    as they arrive, so the lab floor can show a seat's thinking while the call is still running."""
+    as they arrive, so the lab floor can show a seat's thinking while the call is still running.
+
+    ``timeout`` bounds each socket read; ``deadline`` bounds the whole call, so a server that trickles a byte now and
+    then cannot hold a call (and the lab) open forever."""
 
     def llm(prompt, system=None, tier=None, on_progress=None):
         body = dict(
@@ -49,15 +54,18 @@ def openai_compatible_llm(
             if not stream:
                 msg = json.load(resp)["choices"][0]["message"]
                 return Reply(msg["content"], reasoning=msg.get("reasoning_content"))
-            return Reply(*read_stream(resp, on_progress))
+            return Reply(*read_stream(resp, on_progress, deadline=time.monotonic() + deadline))
 
     return llm
 
 
-def read_stream(lines, on_progress=None):
-    """(content, reasoning) from an OpenAI-style stream of `data: {...}` lines, reporting progress as it goes."""
+def read_stream(lines, on_progress=None, deadline=None):
+    """(content, reasoning) from an OpenAI-style stream of `data: {...}` lines, reporting progress as it goes. Past
+    `deadline` (time.monotonic()) it raises TimeoutError."""
     content, reasoning = [], []
     for raw in lines:
+        if deadline is not None and time.monotonic() > deadline:
+            raise TimeoutError("LLM call exceeded its deadline")
         line = raw.decode() if isinstance(raw, bytes) else raw
         line = line.strip()
         if not line.startswith("data:"):

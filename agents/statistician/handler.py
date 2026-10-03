@@ -72,6 +72,7 @@ def schedule_replications(rig, ctx):
         keys = ctx["judge"].data_keys("extra_replication", ctx["campaign"], len(queued))
         if not keys:  # finite real data: no fresh months for another replication
             rig.log(sid, seat, "grade B, but the judge has no fresh data for another replication")
+            ask_for_fresh_data(rig, ctx, e)
             continue
         seed = keys[0]
         try:
@@ -87,6 +88,25 @@ def schedule_replications(rig, ctx):
         rig.queue(seat, rig.seat_for("replicator"), "replicate", sid, dict(seed=seed, attempt=n + 1))
         queued.append(e["key"])
     return queued
+
+
+def ask_for_fresh_data(rig, ctx, e):
+    """A supported result that failed its replication can never be promoted while the judge has no fresh months for
+    another one, so the owner is asked (once per change): opening the reserve months is a data-role decision
+    (invariant 9) only the owner can make."""
+    kg = ctx.get("knowledge")
+    msg = f"{e['key']} is supported ({e['point']:+.1%}) but not replicated, and there are no fresh months to try again"
+    rig.send(rig.seat_for("statistician"), rig.seat_for("pi"), msg + ": the owner has been asked.")
+    if kg is not None:
+        kg.request(ctx["run_id"], ctx["campaign"], dict(
+            what=f"Open fresh months for a second replication of {e['key']}.",
+            why=f"It was supported ({e['point']:+.1%}, CI {e['lo']:+.1%} to {e['hi']:+.1%}) but its first replication "
+                "did not confirm it; only a replicated result can change the champion, so without fresh months it "
+                "never can.",
+            how="Decide whether the reserve months (docs/specs/bikeshare.md section 5) may be used for second "
+                "replications, and answer here; opening them is a judge and rigspec change.",
+            done="The reserve is opened for replications, or the owner declines and the result stays at grade B.",
+        ))  # fmt: skip
 
 
 # ---------------------------------------------------------------------------- statistician (code only)

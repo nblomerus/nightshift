@@ -68,3 +68,17 @@ def test_only_the_statistician_may_queue_a_replication(tmp_path):
     rig, ctx, _ = run(failing_replicator(1), root=str(tmp_path / "run"), n_campaigns=1)
     with pytest.raises(GuardError, match="may not move"):
         rig.advance(rig.seat_for("pi"), SLICE, "replication_queued", checks=replication_checks(rig, SLICE, ctx))
+
+
+def test_with_no_fresh_data_a_failed_replication_is_put_to_the_owner(tmp_path, monkeypatch):
+    from judges import forecast_lab
+    from state.knowledge import Knowledge
+
+    real = forecast_lab.data_keys
+    monkeypatch.setattr(forecast_lab, "data_keys",
+                        lambda purpose, *a: () if purpose == "extra_replication" else real(purpose, *a))  # fmt: skip
+    kg_path = str(tmp_path / "kg.db")
+    rig, ctx, _ = run(failing_replicator(1), root=str(tmp_path / "run"), n_campaigns=2, knowledge=kg_path)
+    assert grades(ctx, SLICE)[0] == (1, "B: supported, not replicated")
+    (req,) = Knowledge(kg_path, "forecast-lab").requests("open")
+    assert "second replication of last_year_window" in req["what"] and "reserve" in req["how"]
