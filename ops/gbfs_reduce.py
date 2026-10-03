@@ -56,19 +56,44 @@ def reduce_day(path, names, every=None):
     return out.reset_index(drop=True)
 
 
+def _unchanged(out_path, csv_text):
+    """True if `out_path` already holds exactly `csv_text` (compared decompressed: gzip's own header mtime would
+    otherwise make two writes of identical content look different byte-for-byte). A file that exists but won't
+    read back as gzip (e.g. truncated by a killed writer, since the write below isn't atomic) counts as changed
+    so it gets overwritten instead of wedging reduce_all the same way a bad day file would."""
+    if not os.path.exists(out_path):
+        return False
+    try:
+        with gzip.open(out_path, "rt") as f:
+            return f.read() == csv_text
+    except (OSError, EOFError):
+        # gzip.BadGzipFile (an OSError) for a header that isn't gzip at all, EOFError (not an
+        # OSError) for a truncated body - both are what a writer killed mid-write leaves behind.
+        return False
+
+
 def reduce_all(gbfs_root, out_path, today=None):
-    """Every complete day (not `today`, which is still being collected) into one table."""
+    """Every complete day (not `today`, which is still being collected) into one table. A day file that fails to
+    parse (e.g. truncated by the collector) is skipped, not fatal: it would otherwise abort the whole rebuild and
+    freeze the censoring table at whatever it last was. Returns (table, skipped), where `skipped` is a list of
+    (path, error) for the caller to alert on. Leaves the file untouched when the freshly computed table is
+    byte-identical to what's already there, so its mtime (and anything keyed on it) stays stable too."""
     days = sorted(glob.glob(os.path.join(gbfs_root, "????-??-??.csv.gz")))
-    frames = [
-        reduce_day(p, station_names(gbfs_root, os.path.basename(p)[:10]))
-        for p in days
-        if os.path.basename(p)[:10] != today
-    ]
+    frames, skipped = [], []
+    for p in days:
+        if os.path.basename(p)[:10] == today:
+            continue
+        try:
+            frames.append(reduce_day(p, station_names(gbfs_root, os.path.basename(p)[:10])))
+        except Exception as e:
+            skipped.append((p, f"{type(e).__name__}: {e}"))
     table = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["station", "date"])
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with gzip.open(out_path, "wt") as f:
-        table.to_csv(f, index=False)
-    return table
+    csv_text = table.to_csv(index=False)
+    if not _unchanged(out_path, csv_text):
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with gzip.open(out_path, "wt") as f:
+            f.write(csv_text)
+    return table, skipped
 
 
 def main(argv=None):
@@ -83,8 +108,10 @@ def main(argv=None):
     a = ap.parse_args(argv)
     today = dt.datetime.now(ZoneInfo(SYSTEMS[a.system]["tz"])).date().isoformat()
     out = os.path.join(a.data, "bikeshare", a.system, "censor_day.csv.gz")
-    table = reduce_all(os.path.join(a.data, "gbfs", a.system), out, today=today)
+    table, skipped = reduce_all(os.path.join(a.data, "gbfs", a.system), out, today=today)
     print(f"{out}: {len(table)} station-days")
+    for path, error in skipped:
+        print(f"skipped {path}: {error}")
 
 
 if __name__ == "__main__":

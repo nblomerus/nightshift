@@ -1,6 +1,9 @@
 """ROADMAP 8d: GBFS snapshots -> station-day censoring; the judge scores only uncensored days in masked months."""
 
+import gzip
 import json
+import os
+import time
 
 import numpy as np
 import pytest
@@ -23,6 +26,51 @@ def test_reduce_day_counts_empty_minutes_and_coverage(tmp_path):
     assert out.loc["A St", "empty_minutes"] == 65 and out.loc["A St", "coverage"] == 1.0
     assert out.loc["B St", "coverage"] == pytest.approx(230 / 288)
     assert out.loc["C St", "empty_minutes"] == 0
+
+
+def test_reduce_all_skips_a_corrupted_day_and_keeps_the_rest(tmp_path):
+    stations = {"a": "A St", "b": "B St"}
+    gbfs_day(str(tmp_path), "2026-10-01", stations)
+    gbfs_day(str(tmp_path), "2026-10-03", stations)
+    (tmp_path / "2026-10-02.csv.gz").write_bytes(b"not actually gzip")  # the collector was killed mid-write
+    out = tmp_path / "out" / "censor_day.csv.gz"
+    table, skipped = gr.reduce_all(str(tmp_path), str(out))
+    assert set(table["date"]) == {"2026-10-01", "2026-10-03"}  # the good days still build the table
+    assert len(skipped) == 1 and "2026-10-02" in skipped[0][0] and skipped[0][1]
+
+
+def test_reduce_all_recovers_from_a_corrupted_output_file(tmp_path):
+    gbfs_day(str(tmp_path), "2026-10-01", {"a": "A St"})
+    out = tmp_path / "out" / "censor_day.csv.gz"
+    out.parent.mkdir()
+    out.write_bytes(b"not actually gzip")  # a previous reduce_all was killed mid-write of its own output
+    table, skipped = gr.reduce_all(str(tmp_path), str(out))
+    assert not skipped  # the bad file is the output, not a day file: nothing to skip
+    assert set(table["date"]) == {"2026-10-01"}  # and the table still gets built and written
+    with gzip.open(out, "rt") as f:
+        assert f.read() == table.to_csv(index=False)  # the corrupt file was overwritten, not left in place
+
+
+def test_reduce_all_recovers_from_a_truncated_output_file(tmp_path):
+    gbfs_day(str(tmp_path), "2026-10-01", {"a": "A St"})
+    out = tmp_path / "out" / "censor_day.csv.gz"
+    out.parent.mkdir()
+    with gzip.open(out, "wt") as f:
+        f.write("station,date,empty_minutes,coverage\n" * 100)  # a valid header, cut off mid-body
+    out.write_bytes(out.read_bytes()[: out.stat().st_size // 2])
+    table, skipped = gr.reduce_all(str(tmp_path), str(out))
+    assert not skipped
+    assert set(table["date"]) == {"2026-10-01"}
+
+
+def test_reduce_all_does_not_rewrite_an_identical_table(tmp_path):
+    gbfs_day(str(tmp_path), "2026-10-01", {"a": "A St"})
+    out = tmp_path / "censor_day.csv.gz"
+    gr.reduce_all(str(tmp_path), str(out))
+    mtime = out.stat().st_mtime
+    time.sleep(0.05)
+    gr.reduce_all(str(tmp_path), str(out))  # nothing in the source changed
+    assert out.stat().st_mtime == mtime  # so the file (and its mtime) stays untouched
 
 
 @pytest.fixture(scope="module")
@@ -88,3 +136,37 @@ def test_rig_refuses_to_pass_controls_without_the_mask(tmp_path):
     with pytest.raises(GuardError, match="censor_mask_available"):
         rig.advance(rig.seat_for("statistician"), "S1", "controls_passed", checks=dict(ok, censor_mask_available=False))
     assert json.loads(json.dumps(spec["decision_standards"]["censoring"]))["empty_minutes"] == 60
+
+
+def _one_station_root(tmp_path, name):
+    """A minimal ingested system (3 months, 1 station) plus a GBFS collector directory, for load_panel cache tests."""
+    root = tmp_path / name
+    zips = trip_zips(first="202102", last="202104", n_stations=1)
+    ing.ingest("chi", str(root), get=stub_get(zips), log=lambda *_: None)
+    return root, tmp_path / f"{name}-gbfs"
+
+
+def test_load_panel_caches_on_censor_content_not_mtime(tmp_path):
+    root, gbfs = _one_station_root(tmp_path, "cache")
+    station = {"CHI00000": expected_pickups(n_stations=1)[0][0]}
+    gbfs_day(str(gbfs), "2025-07-01", station)
+    censor = root / "censor_day.csv.gz"
+    gr.reduce_all(str(gbfs), str(censor))
+    bj.configure(dict(root=str(root)))
+    panel1 = bj.load_panel()
+
+    os.utime(censor, (time.time() + 10_000, time.time() + 10_000))  # a refresh_data-style rewrite: mtime moves
+    panel2 = bj.load_panel()
+    assert panel2 is panel1  # content didn't change, so this must be the same cached panel, not a new one
+
+    gbfs_day(str(gbfs), "2025-07-02", station)  # a real change: a new day is now covered
+    gr.reduce_all(str(gbfs), str(censor))
+    panel3 = bj.load_panel()
+    assert panel3 is not panel1  # content changed, so a fresh panel is expected
+
+
+def test_load_panel_cache_stays_bounded_across_reconfigurations(tmp_path):
+    for i in range(bj._PANELS_MAX + 3):
+        root, _ = _one_station_root(tmp_path, f"bound{i}")
+        bj.configure(dict(root=str(root)))
+        assert len(bj._PANELS) <= bj._PANELS_MAX

@@ -115,18 +115,32 @@ def read_manifest(root):
 
 
 def ingest(system, root, first=FIRST_MONTH, last=None, get=fetch, log=print):
-    """Ingest every published month in [first, last] not already in the manifest with the same publication time."""
-    done = read_manifest(root)["months"]
+    """Ingest every published month in [first, last] not already in the manifest with the same publication time.
+    A month whose zip fails to download or parse is logged and skipped, not fatal, so later months still get
+    ingested. Its failure is tracked in manifest['failed'][month] = {error, first_seen, last_seen, attempts} and
+    cleared the next time that month succeeds, so a month stuck failing for days can be escalated by the caller."""
+    start = read_manifest(root)
+    done, failed = start["months"], start.get("failed", {})
+    now = dt.datetime.now(dt.UTC).isoformat()
     for month, published_at in list_months(system, get).items():
         if month < first or (last and month > last):
             continue
         if done.get(month, {}).get("published_at") == published_at:
             continue
         url = f"https://s3.amazonaws.com/{SYSTEMS[system]['bucket']}/{SYSTEMS[system]['key'].format(m=month)}"
-        entry = write_month(root, month, published_at, get(url))
+        try:
+            entry = write_month(root, month, published_at, get(url))
+        except Exception as e:
+            prior = failed.get(month, {})
+            failed[month] = dict(error=f"{type(e).__name__}: {e}", first_seen=prior.get("first_seen", now),
+                                  last_seen=now, attempts=prior.get("attempts", 0) + 1)  # fmt: skip
+            log(f"{month}: ingest failed ({failed[month]['attempts']}x): {failed[month]['error']}")
+            continue
+        failed.pop(month, None)
         log(f"{month}: {entry['docked_trips']:,} docked of {entry['trips']:,} trips, {entry['stations']} stations")
     manifest = read_manifest(root)
-    manifest["ingested_at"] = dt.datetime.now(dt.UTC).isoformat()
+    manifest["failed"] = failed
+    manifest["ingested_at"] = now
     with open(os.path.join(root, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=1, sort_keys=True)
     return manifest

@@ -10,7 +10,7 @@ from harness.fake_llm import make_fake_llm
 from judges import bikeshare as bj
 from ops import bikeshare_ingest as ing
 from science import kernel as sk
-from tests.fixtures.bikeshare.synth import stub_get, trip_zips
+from tests.fixtures.bikeshare.synth import stub_get, stub_get_with_failures, trip_zips
 
 N_STATIONS = 20
 
@@ -37,6 +37,30 @@ def test_ingest_skips_months_already_ingested(data_root):
     seen = []
     ing.ingest("chi", str(data_root), get=stub_get(trip_zips(n_stations=N_STATIONS)), log=seen.append)
     assert seen == []
+
+
+def test_ingest_skips_a_broken_month_and_still_ingests_the_rest(tmp_path):
+    root = tmp_path / "chi"
+    zips = trip_zips(first="202601", last="202603", n_stations=N_STATIONS)
+    seen = []
+    manifest = ing.ingest("chi", str(root), get=stub_get_with_failures(zips, {"202602"}), log=seen.append)
+    assert set(manifest["months"]) == {"202601", "202603"}  # the good months either side still land
+    assert "202602" in manifest["failed"] and manifest["failed"]["202602"]["attempts"] == 1
+    assert any("202602" in line for line in seen)
+
+
+def test_ingest_tracks_a_failing_month_until_it_later_succeeds(tmp_path):
+    root = tmp_path / "chi"
+    zips = trip_zips(first="202601", last="202603", n_stations=N_STATIONS)
+    broken = stub_get_with_failures(zips, {"202602"})
+    ing.ingest("chi", str(root), get=broken, log=lambda *_: None)
+    manifest = ing.ingest("chi", str(root), get=broken, log=lambda *_: None)  # still broken the next cycle
+    fail = manifest["failed"]["202602"]
+    assert fail["attempts"] == 2 and fail["first_seen"] <= fail["last_seen"]
+
+    manifest = ing.ingest("chi", str(root), get=stub_get(zips), log=lambda *_: None)  # finally publishes cleanly
+    assert set(manifest["months"]) == {"202601", "202602", "202603"}
+    assert "202602" not in manifest["failed"]  # the stuck-for-days record clears once it succeeds
 
 
 def test_roles_are_disjoint_and_rotate_through_the_calendar():
