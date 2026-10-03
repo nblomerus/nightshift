@@ -82,3 +82,29 @@ def test_with_no_fresh_data_a_failed_replication_is_put_to_the_owner(tmp_path, m
     assert grades(ctx, SLICE)[0] == (1, "B: supported, not replicated")
     (req,) = Knowledge(kg_path, "forecast-lab").requests("open")
     assert "second replication of last_year_window" in req["what"] and "reserve" in req["how"]
+    assert req["asks"] == 1  # ROADMAP item 5d: still open from campaign 1, so campaign 2 did not re-file it
+
+
+def test_ask_for_fresh_data_skips_re_filing_while_the_same_request_is_open(tmp_path):
+    """ROADMAP item 5d: ask_for_fresh_data's own docstring says 'once per change'; it must not re-send the owner
+    message or re-write the request node while the request it already filed is still open."""
+    from agents.statistician.handler import ask_for_fresh_data
+    from harness.daemon import load_rigspec
+    from state.knowledge import Knowledge
+    from state.rig import Rig
+
+    spec = load_rigspec()
+    rig = Rig(str(tmp_path / "rig"), spec)
+    kg = Knowledge(str(tmp_path / "kg.db"), spec["rig"])
+    ctx = {"knowledge": kg, "run_id": kg.begin_run("r", "j"), "campaign": 1}
+    e = dict(key="last_year_window", point=0.12, lo=0.01, hi=0.23)
+    ask_for_fresh_data(rig, ctx, e)
+    ask_for_fresh_data(rig, ctx, e)  # same change, every campaign it recurs: still just one ask
+    (req,) = kg.requests("open")
+    assert req["asks"] == 1
+    assert len(rig.inbox(rig.seat_for("pi"))) == 1  # the PI was told once, not twice
+
+    kg.reply("Reserve opened for second replications", req["id"])
+    ask_for_fresh_data(rig, ctx, e)  # answered, then asked again: this IS new information, so it must reopen
+    (reopened,) = kg.requests("open")
+    assert reopened["id"] == req["id"] and reopened["asks"] == 2

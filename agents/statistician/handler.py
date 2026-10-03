@@ -17,6 +17,7 @@ from agents.common import (
     treatment_of,
 )
 from science import kernel as sk
+from state.knowledge import DESIGN_CHECK_FAILED, LEAK_CANARY_FIRED, UNDERPOWERED
 from state.rig import GuardError
 
 
@@ -93,13 +94,17 @@ def schedule_replications(rig, ctx):
 def ask_for_fresh_data(rig, ctx, e):
     """A supported result that failed its replication can never be promoted while the judge has no fresh months for
     another one, so the owner is asked (once per change): opening the reserve months is a data-role decision
-    (invariant 9) only the owner can make."""
+    (invariant 9) only the owner can make. Filed once, then left alone while it is still open: the condition
+    recurring every campaign is not a new ask, and re-filing it would only grow the graph for no new information."""
     kg = ctx.get("knowledge")
+    what = f"Open fresh months for a second replication of {e['key']}."
+    if kg is not None and kg.request_open(what):
+        return
     msg = f"{e['key']} is supported ({e['point']:+.1%}) but not replicated, and there are no fresh months to try again"
     rig.send(rig.seat_for("statistician"), rig.seat_for("pi"), msg + ": the owner has been asked.")
     if kg is not None:
         kg.request(ctx["run_id"], ctx["campaign"], dict(
-            what=f"Open fresh months for a second replication of {e['key']}.",
+            what=what,
             why=f"It was supported ({e['point']:+.1%}, CI {e['lo']:+.1%} to {e['hi']:+.1%}) but its first replication "
                 "did not confirm it; only a replicated result can change the champion, so without fresh months it "
                 "never can.",
@@ -184,7 +189,7 @@ def statistician_power_controls(rig, seat, task, ctx):
         with contextlib.suppress(GuardError):  # refusal is logged by the rig
             rig.advance(seat, sid, "controls_passed", checks=design_ok)
         # every design scores the same kind of months, so no larger design fixes this
-        rig.advance(seat, sid, "parked", checks={"no_larger_design": True}, note=f"design check failed: {failed}")
+        rig.advance(seat, sid, "parked", checks={"no_larger_design": True}, note=f"{DESIGN_CHECK_FAILED}: {failed}")
         rig.send(seat, rig.seat_for("pi"), f"{sid}: parked, the design fails {failed}.", sid)
         return rep
     if leak:
@@ -195,7 +200,7 @@ def statistician_power_controls(rig, seat, task, ctx):
                 "controls_passed",
                 checks={"p_decisive>=0.8": p_decisive >= power_min, "controls_admissible": False, **design_ok},
             )
-        rig.advance(seat, sid, "parked", checks={"no_larger_design": True}, note="leak canary fired")
+        rig.advance(seat, sid, "parked", checks={"no_larger_design": True}, note=LEAK_CANARY_FIRED)
         rig.send(
             seat,
             rig.seat_for("pi"),
@@ -227,7 +232,7 @@ def statistician_power_controls(rig, seat, task, ctx):
                 seat, rig.seat_for("methodologist"), "draft_prereg", sid, dict(key=pre["treatment_key"], feedback=msg)
             )
         else:
-            rig.advance(seat, sid, "parked", checks={"no_larger_design": True}, note="underpowered at largest design")
+            rig.advance(seat, sid, "parked", checks={"no_larger_design": True}, note=UNDERPOWERED)
             rig.send(
                 seat,
                 rig.seat_for("pi"),

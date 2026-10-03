@@ -24,11 +24,50 @@ import sqlite3
 import time
 
 UNDERPOWERED = "underpowered at largest design"  # agents/statistician/handler.py's park note
+DESIGN_CHECK_FAILED = "design check failed"  # agents/statistician/handler.py's park note (judge-specific guard)
+LEAK_CANARY_FIRED = "leak canary fired"  # agents/statistician/handler.py's park note
+REVISION_CAP_REACHED = "revision cap reached"  # agents/methodologist/handler.py's park note
+# Park notes whose cause is a function only of the treatment/data (seeded power check, judge guards, leak canary):
+# re-running the same treatment on the same data under the same judge can only park it again. Defined once here and
+# imported by the handlers that write these notes, so the literal strings cannot drift out of sync with is_repeat.
+TERMINAL_PARK_REASONS = (UNDERPOWERED, DESIGN_CHECK_FAILED, LEAK_CANARY_FIRED)
+# A revision cap comes from LLM review rounds, not from the data, so one could be bad luck: it counts as terminal only
+# once the same treatment has hit it this many times on the same data.
+REVISION_CAP_REPEATS = 2
 LESSON_OVERLAP = 0.6  # share of the shorter lesson's words two lessons must share to count as one idea restated
+RECENT_TESTS = 20  # individual lines kept in the PI's brief for the current champion; older tests fold by change
 
 
 def config_id(config: dict) -> str:
     return "cfg:" + hashlib.sha256(json.dumps(config, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def is_terminal_park(reason: str | None) -> bool:
+    """Whether a park note names a deterministic, terminal cause (see TERMINAL_PARK_REASONS)."""
+    return any((reason or "").startswith(r) for r in TERMINAL_PARK_REASONS)
+
+
+def settled(tests: list[dict]) -> bool:
+    """Whether these earlier attempts at one treatment (same champion, judge and data) already settle it: a decision,
+    a deterministic terminal park, or the revision cap hit REVISION_CAP_REPEATS times."""
+    parked = [t for t in tests if t["stage"] == "parked"]
+    return (
+        any(t["decision"] for t in tests)
+        or any(is_terminal_park(t.get("reason")) for t in parked)
+        or sum((t.get("reason") or "").startswith(REVISION_CAP_REACHED) for t in parked) >= REVISION_CAP_REPEATS
+    )
+
+
+def idea_fingerprint(idea: str) -> str:
+    """Short content hash of a seat-written idea's text, used to tell two different ideas apart when their
+    slugified names collide (agents/pi/handler.py::take_picks)."""
+    return hashlib.sha256(str(idea).strip().encode()).hexdigest()[:12]
+
+
+def request_id(what: str) -> str:
+    """The id `Knowledge.request()` gives a request for this exact text, computed the same way it is stored so a
+    caller can check whether it is already open without writing to the graph."""
+    return "request:" + hashlib.sha256(str(what).strip()[:800].encode()).hexdigest()[:16]
 
 
 class Knowledge:
@@ -86,13 +125,15 @@ class Knowledge:
 
     def test(self, run: str, campaign: int, sid: str, *, change: str, change_desc: str, treatment: dict, comparator: dict,
              comparator_desc: str, judge: str, data_key, design: str, decision: dict | None, grade: str | None,
-             stage: str, reason: str = "", prereg: str = "", evaluation: str = ""):  # fmt: skip
-        """One slice: tested (decision, grade) or stopped before a decision (stage parked, reason)."""
+             stage: str, reason: str = "", prereg: str = "", evaluation: str = "", idea_fp: str = ""):  # fmt: skip
+        """One slice: tested (decision, grade) or stopped before a decision (stage parked, reason). `idea_fp`
+        (code ideas only) fingerprints the idea's text, so a later idea whose slugified name collides with this
+        one's can still be told apart from it (agents/pi/handler.py::take_picks)."""
         tid = f"test:{run}:{sid}"
         seen = self.props(tid) is not None
         self.node(tid, "test", sid, rig=self.rig, treatment=config_id(treatment), decision=decision, grade=grade,
                   stage=stage, reason=reason, design=design, judge=judge, data=str(data_key), prereg=prereg,
-                  evaluation=evaluation or judge)  # fmt: skip
+                  evaluation=evaluation or judge, idea_fp=idea_fp)  # fmt: skip
         if seen:
             self.commit()
             return tid
@@ -122,19 +163,26 @@ class Knowledge:
 
     def request(self, run: str, campaign: int, ask: dict | str):
         """The PI asked the owner for something the lab cannot get itself (the supervisor pings the owner). `ask` is
-        the PI's brief, {what, why, how, done}; a bare string is just `what`. Asking the same thing again counts."""
+        the PI's brief, {what, why, how, done}; a bare string is just `what`. Asking the same thing again counts,
+        and reopens it if it had already been answered: the same condition recurring is itself new information."""
         fields = ("what", "why", "how", "done")
         ask = {"what": ask} if isinstance(ask, str) else ask
         ask = {k: str(ask.get(k) or "").strip()[:800] for k in fields}
-        rid = "request:" + hashlib.sha256(ask["what"].encode()).hexdigest()[:16]
+        rid = request_id(ask["what"])
         row = self.db.execute("SELECT props FROM nodes WHERE id=?", (rid,)).fetchone()
         old = json.loads(row[0]) if row else {}
-        new = {"status": "open"} if not row else {}
+        new = {"status": "open"} if not row or old.get("status") == "answered" else {}
         self.node(rid, "request", ask["what"], rig=self.rig, asks=old.get("asks", 1 if row else 0) + 1,
                   last_asked=time.time(), **new, **{k: v for k, v in ask.items() if v})  # fmt: skip
         self.edge(rid, run, "FROM", run, campaign)
         self.commit()
         return rid
+
+    def request_open(self, what: str) -> bool:
+        """Whether a request for this exact text is already open and unanswered, without writing anything: lets a
+        caller that must ask only once per condition (e.g. ask_for_fresh_data) skip re-filing while it still is."""
+        row = self.db.execute("SELECT props FROM nodes WHERE id=?", (request_id(what),)).fetchone()
+        return bool(row) and json.loads(row[0]).get("status") == "open"
 
     def reply(self, text: str, request: str | None = None):
         """The owner's answer to the lab (`make reply`, or the lab floor's mailbox); the PI reads it in its next
@@ -213,14 +261,17 @@ class Knowledge:
     def is_repeat(self, treatment: dict, comparator: dict, evaluation: str, data_key) -> bool:
         """A decided test with the same treatment, comparator, evaluation (the judge's scoring semantics and data; the
         full judge digest for judges that do not declare one) and data already exists: running it again scores the same
-        data under the same rule and can only reproduce the answer. A test parked as underpowered at the largest
-        design counts too: the power check is seeded, so on the same data it parks again."""
-        return any(
-            t["treatment"] == config_id(treatment)
-            and t.get("evaluation", t["judge"]) == evaluation
-            and t["data"] == str(data_key)
-            and (t["decision"] or (t["stage"] == "parked" and (t.get("reason") or "").startswith(UNDERPOWERED)))
-            for t in self.tests(comparator)
+        data under the same rule and can only reproduce the answer. A test parked for a deterministic, terminal reason
+        (see TERMINAL_PARK_REASONS) counts too: the cause is a function only of the treatment/data, so on the same
+        data it parks again the same way."""
+        return settled(
+            [
+                t
+                for t in self.tests(comparator)
+                if t["treatment"] == config_id(treatment)
+                and t.get("evaluation", t["judge"]) == evaluation
+                and t["data"] == str(data_key)
+            ]
         )
 
     def lessons(self, limit=8, distinct=True) -> list[str]:
@@ -236,19 +287,23 @@ class Knowledge:
         kept: list[list] = []  # [text, words, times stated], newest first
         for text in newest:
             words = set(re.findall(r"[a-z0-9_]{3,}", re.sub(r"^\(after campaign \d+\)\s*", "", text.lower())))
-            same = next((k for k in kept if len(words & k[1]) >= LESSON_OVERLAP * min(len(words), len(k[1]))), None)
+            # A lesson with no real words (an LLM's "N/A", "none", "-") can never match, swallow, or be swallowed:
+            # it keeps its own slot like any other lesson, instead of silently absorbing every other one into it.
+            same = next(
+                (k for k in kept if words and k[1] and len(words & k[1]) >= LESSON_OVERLAP * min(len(words), len(k[1]))),
+                None,
+            )
             if same is not None:
                 same[2] += 1
             elif len(kept) < limit:
                 kept.append([text, words, 1])
         return [t if n == 1 else f"{t} (stated {n} times)" for t, _, n in kept][::-1]
 
-    def runs_without_tests(self, exclude: str | None = None) -> int:
-        """Runs since the last one that tested (or stopped) any slice: how long the lab has been idle."""
+    def _runs_since(self, exclude: str | None, stage_filter: str) -> int:
         last = self.db.execute(
             "SELECT max(json_extract(r.props, '$.started')) FROM nodes r JOIN edges e ON e.dst = r.id AND "
             "e.type = 'IN' JOIN nodes t ON t.id = e.src AND t.type = 'test' WHERE r.type = 'run' AND "
-            "json_extract(r.props, '$.rig') = ?",
+            f"json_extract(r.props, '$.rig') = ?{stage_filter}",
             (self.rig,),
         ).fetchone()[0]
         return self.db.execute(
@@ -256,6 +311,16 @@ class Knowledge:
             "json_extract(props, '$.started') > ?",
             (self.rig, exclude or "", last if last is not None else -1),
         ).fetchone()[0]
+
+    def runs_without_tests(self, exclude: str | None = None) -> int:
+        """Runs since the last one that tested (or stopped) any slice: how long the lab has been idle."""
+        return self._runs_since(exclude, "")
+
+    def runs_without_progress(self, exclude: str | None = None) -> int:
+        """Like `runs_without_tests`, but ignoring test nodes whose stage is neither 'written' nor 'parked': a
+        slice that stalled mid-workflow (a handler kept failing on it) never reached either terminal outcome, and
+        counting it as activity is what let a recurring handler bug hide from the PI's idle-streak circuit breaker."""
+        return self._runs_since(exclude, " AND json_extract(t.props, '$.stage') IN ('written', 'parked')")
 
     def screens(self, champion: dict) -> dict[str, list[float]]:
         out: dict[str, list[float]] = {}
@@ -285,7 +350,17 @@ class Knowledge:
         mine = self.tests(champion)
         if mine:
             lines.append("- Tested against THIS champion:")
-            for t in mine:
+            recent, earlier = (mine[-RECENT_TESTS:], mine[:-RECENT_TESTS]) if len(mine) > RECENT_TESTS else (mine, [])
+            if earlier:  # folded, not dropped: one line per change key, with counts by decision, however many there are
+                folded: dict[str, dict[str, int]] = {}
+                for t in earlier:
+                    d = t["decision"]["decision"] if t["decision"] else f"stopped at {t['stage']}"
+                    folded.setdefault(t["change"], {})[d] = folded.setdefault(t["change"], {}).get(d, 0) + 1
+                summary = "; ".join(
+                    f"{change} ({', '.join(f'{n}x {d}' for d, n in counts.items())})" for change, counts in folded.items()
+                )
+                lines.append(f"  - ({len(earlier)} earlier test(s) against this champion, folded by change): {summary}")
+            for t in recent:
                 d = t["decision"]
                 res = (
                     f"{d['decision']} {d['point']:+.2%} [{d['lo']:+.2%}, {d['hi']:+.2%}], grade {t['grade']}"

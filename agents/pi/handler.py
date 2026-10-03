@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from agents.common import ask_json, change_desc, evaluation_key, persona
+from state.knowledge import idea_fingerprint, settled
 
 
 # ---------------------------------------------------------------------------- PI
@@ -47,9 +48,10 @@ def pi_plan(rig, seat, task, ctx):
     new_ideas = hasattr(J, "check_code")  # the judge can run seat-written code
     msgs = rig.inbox(seat)
     notes = "\n".join(f"- from {m['frm']}: {m['body'][:300]}" for m in msgs) or "(none)"
-    # Circuit breaker: once a run has tested nothing, an empty plan is not accepted (an empty plan teaches the lab
+    # Circuit breaker: once a run has made no progress, an empty plan is not accepted (an empty plan teaches the lab
     # nothing and, with an unchanged brief, repeats every hour). This decides only what to attempt, never what counts.
-    idle = kg.runs_without_tests(exclude=ctx.get("run_id")) if kg is not None else 0
+    # A slice stalled mid-workflow (a handler kept failing on it) is not progress either, so it does not reset this.
+    idle = kg.runs_without_progress(exclude=ctx.get("run_id")) if kg is not None else 0
     promising = [k for k, v in ctx["screen"].items() if k in menu and v >= SCREEN_MIN]
     prompt = (
         f"Campaign {ctx['campaign']} of {ctx['n_campaigns']}. Current champion: {ctx['champion_desc']}.\n\n"
@@ -70,6 +72,9 @@ def pi_plan(rig, seat, task, ctx):
             'will write it as code. Pick it as {"key": "new", "name": "short_snake_case_name", "idea": "what the feature '
             'is and why it should reduce the error, in 2-3 sentences", "rationale": "..."}. A new idea has no exploratory '
             "screen yet, so lessons about screens do not apply to it; it is judged only by the preregistered test. "
+            "The strongest move is usually to BUNDLE: combine several of the lab's OWN already-measured, independent "
+            "real effects (CI lower bound above zero, point estimate below the SESOI) into ONE idea with up to 8 "
+            "columns, rather than correlated variants of a single signal the champion already uses. "
             + (
                 "None of the listed changes has a positive screen: a well-reasoned new idea is how the lab keeps "
                 "learning now. "
@@ -163,6 +168,13 @@ STALL_RETRY = (
 def take_picks(out, menu, new_ideas, kg, ctx):
     """The PI's valid picks (at most two) and why the others were dropped."""
     picks, dropped = [], []
+    tests, champion = (kg.tests() if kg is not None else []), kg_champion(ctx)
+
+    def find_prior(k):
+        """The earlier attempts at this code idea against this champion, if they settle it (else None)."""
+        mine = [t for t in tests if t["change"] == k and t["champion"] == champion]
+        return mine if mine and settled(mine) else None
+
     for p in out.get("picks", []) or []:
         if not isinstance(p, dict):
             continue
@@ -170,19 +182,28 @@ def take_picks(out, menu, new_ideas, kg, ctx):
             picks.append(p)
         elif p.get("key") == "new" and new_ideas:
             name = re.sub(r"[^a-z0-9_]+", "_", str(p.get("name", "")).lower()).strip("_")[:40]
-            key = f"code:{name}"
             idea = str(p.get("idea") or p.get("rationale") or "").strip()  # models sometimes describe it in rationale
-            decided = kg is not None and any(
-                t["change"] == key and t["decision"] and t["champion"] == kg_champion(ctx) for t in kg.tests()
-            )
+            key = f"code:{name}"
+            fp = idea_fingerprint(idea)
+            # Identity is the idea's CONTENT, not the (40-char-truncated) name alone: a prior idea under the same
+            # slug but with different text is a different hypothesis and must not collide with it. Only when the
+            # slug collides AND the text matches is this truly the same idea already settled.
+            prior = find_prior(key)
+            if prior is not None and all(t.get("idea_fp") != fp for t in prior):
+                key = f"code:{name[:33]}_{fp[:6]}"
+                # This disambiguated key embeds fp[:6], so any test already filed under it is, by construction,
+                # the same content: re-proposing a once-disambiguated idea under its original name must still
+                # find that history, not be waved through as new every time the slug collides again.
+                prior = find_prior(key)
+            decided = prior is not None
             if any(q["key"].startswith("code:") for q in picks):
                 dropped.append(f"{key}: only one new idea per campaign")
             elif len(name) < 3 or not idea:
                 dropped.append(f"new idea {p.get('name')!r}: needs a name and a description")
             elif decided:
-                dropped.append(f"{key}: already decided against this champion")
+                dropped.append(f"{key}: already decided, or permanently parked, against this champion")
             else:
-                ctx["ideas"][key] = dict(name=name, idea=idea[:600])
+                ctx["ideas"][key] = dict(name=name, idea=idea[:600], idea_fp=fp)
                 picks.append(dict(p, key=key))
         else:
             dropped.append(f"{p.get('key')!r}: not available this campaign")
